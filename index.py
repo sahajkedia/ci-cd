@@ -1,5 +1,5 @@
-def exampleFunction():
+def exampleFunctions():
     print("hello")
 
 
-exampleFunction()
+exampleFunctions()
