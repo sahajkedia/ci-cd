@@ -17,9 +17,10 @@ isort . --check
 ```
 
 # To actually format the code (not just check):
-
+```
 black .
 isort .
+```
 
 # Run the streamlit app
 
