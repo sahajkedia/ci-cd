@@ -1,7 +1,11 @@
-# To run the file
+# Create and Activate the virtual environment
 
 ```
+python -m venv venv
+#for Ubuntu
 source venv/bin/activate
+#for Windows
+venv\Scripts\activate
 ```
 
 # Run all linting checks
