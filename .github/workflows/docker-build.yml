@@ -1,0 +1,19 @@
+name: Docker Build
+
+on:
+  push:
+    branches:
+      - docker-build
+    paths:
+      - "Dockerfile"
+      - "docker-compose.yml"
+      - "**/*.py"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t streamlit-app .
