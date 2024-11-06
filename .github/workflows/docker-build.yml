@@ -9,6 +9,7 @@ on:
       - "docker-compose.yml"
       - "**.py"
       - "requirements.txt"
+      - ".github/workflows/**"
 
 jobs:
   build-and-push:
