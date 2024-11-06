@@ -66,3 +66,7 @@ share/python-wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+
+# .gitignore
+logs
+!logs/.gitkeep
