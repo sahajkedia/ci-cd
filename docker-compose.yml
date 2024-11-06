@@ -1,6 +1,6 @@
 services:
   streamlit:
-    image: ghcr.io/${GITHUB_REPOSITORY}:latest
+    image: ghcr.io/${GITHUB_REPOSITORY}:${GITHUB_PACKAGE}
     restart: unless-stopped
     ports:
       - "8501:8501"
