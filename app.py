@@ -7,7 +7,7 @@ st.title("Sample Streamlit App")
 
 data = pd.DataFrame(np.random.randn(10, 3), columns=["A", "B", "C"])
 
-st.write("## Sample Data")
+st.write("## Sample Datae")
 st.dataframe(data)
 
 st.write("## Line Chart")
