@@ -56,17 +56,11 @@ jobs:
     runs-on: ubuntu-22.04
     
     steps:
-      - name: Debug Information
-        run: |
-          echo "Branch: ${{ github.ref }}"
-          echo "Commit: ${{ github.sha }}"
-
       - name: Setup Tailscale
         uses: tailscale/github-action@v2
         with:
-          oauth-client-id: ${{ secrets.TAILSCALE_CLIENT_ID }}
-          oauth-secret: ${{ secrets.TAILSCALE_OAUTH_SECRET }}  # Changed from oauth-client-secret
-          version: "1.42.0"  # Specify version explicitly
+          authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
+          version: "1.42.0"
           tags: tag:ci
 
       - name: Deploy to server
