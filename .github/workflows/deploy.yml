@@ -16,7 +16,7 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        
+
       - name: Setup Tailscale
         id: tailscale
         uses: tailscale/github-action@v2
@@ -44,7 +44,7 @@ jobs:
             echo "Failed to create SSH directory"
             exit 1
           fi
-          
+
           echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
           echo "StrictHostKeyChecking no" > ~/.ssh/config
@@ -93,7 +93,7 @@ jobs:
             docker image prune -f
             # Log deployment success
             echo "Deployment successful at $(date)" >> deploy.log
-EOFS
+          EOFS
           # Copy and execute deployment script
           scp deploy.sh $DEPLOY_USER@$DEPLOY_HOST:~/
           if ! ssh $DEPLOY_USER@$DEPLOY_HOST "bash ~/deploy.sh"; then
@@ -107,19 +107,19 @@ EOFS
         run: |
           # Wait for service to stabilize
           sleep 5
-          
+
           # Check container status
           if ! ssh $DEPLOY_USER@$DEPLOY_HOST "docker ps | grep streamlit"; then
             echo "Container not running"
             exit 1
           fi
-          
+
           # Check application health
           if ! ssh $DEPLOY_USER@$DEPLOY_HOST "curl -s -f http://localhost:8501/_stcore/health"; then
             echo "Application health check failed"
             exit 1
           fi
-          
+
           # Get logs for debugging
           ssh $DEPLOY_USER@$DEPLOY_HOST "docker-compose logs --tail=50 streamlit"
       - name: Notify on failure
