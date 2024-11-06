@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-st.title("A Streamlit App")
+st.title("A Streamlit Apple")
 
 
 data = pd.DataFrame(np.random.randn(10, 3), columns=["A", "B", "C"])
