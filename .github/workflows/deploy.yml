@@ -1,14 +1,10 @@
 name: Deploy to Local Machine
 
-# on:
-#   workflow_run:
-#     workflows: ["Docker Build and Push"]
-#     types:
-#       - completed
-#     branches:
-#       - docker-build
 on:
-  push:
+  workflow_run:
+    workflows: ["Docker Build and Push"]
+    types:
+      - completed
     branches:
       - docker-build
 
