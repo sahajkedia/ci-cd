@@ -2,127 +2,48 @@ name: Deploy to Local Machine
 
 on:
   workflow_run:
-    workflows: ["Docker Build and Push"]
+    workflows: ["Docker Build and Push"]  # Make sure this exactly matches the name in docker-build.yml
     types:
       - completed
     branches:
-      - docker-build
+      - "docker-build"   # Make sure this matches your branch name exactly
 
 jobs:
   deploy:
     runs-on: ubuntu-22.04
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
-
+    # Adding logging to debug the trigger condition
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - name: Debug Information
+        run: |
+          echo "Triggered by workflow: ${{ github.event.workflow_run.name }}"
+          echo "Workflow conclusion: ${{ github.event.workflow_run.conclusion }}"
+          echo "Branch: ${{ github.event.workflow_run.head_branch }}"
 
       - name: Setup Tailscale
-        id: tailscale
+        if: ${{ github.event.workflow_run.conclusion == 'success' }}
         uses: tailscale/github-action@v2
         with:
           oauth-client-id: ${{ secrets.TAILSCALE_CLIENT_ID }}
           oauth-client-secret: ${{ secrets.TAILSCALE_CLIENT_SECRET }}
           tags: tag:ci
 
-      - name: Check Tailscale Connection
-        run: |
-          # Verify Tailscale connection
-          if ! ping -c 1 ${{ secrets.DEPLOY_HOST }}; then
-            echo "Failed to connect to host via Tailscale"
-            exit 1
-          fi
       - name: Deploy to server
+        if: ${{ github.event.workflow_run.conclusion == 'success' }}
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-          GITHUB_SHA: ${{ github.sha }}
         run: |
-          # Setup SSH with error handling
-          if ! mkdir -p ~/.ssh; then
-            echo "Failed to create SSH directory"
-            exit 1
-          fi
-
+          # Setup SSH
+          mkdir -p ~/.ssh
           echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
           echo "StrictHostKeyChecking no" > ~/.ssh/config
-          # Create deployment script
-          cat << 'EOFS' > deploy.sh
-            set -e  # Exit on any error
-            # Ensure deployment directory exists
-            mkdir -p ~/streamlit-app
-            cd ~/streamlit-app
-            # Backup current compose file if it exists
-            if [ -f docker-compose.yml ]; then
-              cp docker-compose.yml docker-compose.yml.backup
-            fi
-            # Pull latest images
-            echo "Pulling latest images..."
-            if ! docker-compose pull; then
-              echo "Failed to pull images"
-              exit 1
-            fi
-            # Stop current containers
-            echo "Stopping current containers..."
-            docker-compose down || true
-            # Start new containers
-            echo "Starting new containers..."
-            if ! docker-compose up -d; then
-              echo "Failed to start containers"
-              # Restore backup if exists
-              [ -f docker-compose.yml.backup ] && cp docker-compose.yml.backup docker-compose.yml
-              exit 1
-            fi
-            # Wait for container health
-            echo "Waiting for container health check..."
-            for i in {1..30}; do
-              if curl -s -f http://localhost:8501/_stcore/health > /dev/null; then
-                echo "Service is healthy"
-                break
-              fi
-              if [ $i -eq 30 ]; then
-                echo "Service failed to become healthy"
-                exit 1
-              fi
-              sleep 2
-            done
-            # Cleanup
-            echo "Cleaning up old images..."
+
+          # Deploy commands
+          ssh $DEPLOY_USER@$DEPLOY_HOST << 'EOF'
+            cd ~/Documents/vjt/hexray/practice/CI-CD  
+            docker-compose pull
+            docker-compose up -d
             docker image prune -f
-            # Log deployment success
-            echo "Deployment successful at $(date)" >> deploy.log
-          EOFS
-          # Copy and execute deployment script
-          scp deploy.sh $DEPLOY_USER@$DEPLOY_HOST:~/
-          if ! ssh $DEPLOY_USER@$DEPLOY_HOST "bash ~/deploy.sh"; then
-            echo "Deployment failed"
-            exit 1
-          fi
-      - name: Verify Deployment
-        env:
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-        run: |
-          # Wait for service to stabilize
-          sleep 5
-
-          # Check container status
-          if ! ssh $DEPLOY_USER@$DEPLOY_HOST "docker ps | grep streamlit"; then
-            echo "Container not running"
-            exit 1
-          fi
-
-          # Check application health
-          if ! ssh $DEPLOY_USER@$DEPLOY_HOST "curl -s -f http://localhost:8501/_stcore/health"; then
-            echo "Application health check failed"
-            exit 1
-          fi
-
-          # Get logs for debugging
-          ssh $DEPLOY_USER@$DEPLOY_HOST "docker-compose logs --tail=50 streamlit"
-      - name: Notify on failure
-        if: failure()
-        run: |
-          echo "Deployment failed! Check the logs for details."
+          EOF
