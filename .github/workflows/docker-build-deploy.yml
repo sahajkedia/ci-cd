@@ -59,16 +59,23 @@ jobs:
       - name: Setup Tailscale
         uses: tailscale/github-action@v2
         with:
-          authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
-          version: "1.42.0"
+          oauth-client-id: ${{ secrets.TAILSCALE_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TAILSCALE_OAUTH_SECRET }}
           tags: tag:ci
 
       - name: Wait for Tailscale
-        run: sleep 10  # Give Tailscale time to establish connection
-
-      - name: Debug Tailscale
         run: |
-          tailscale ip
+          # Wait for Tailscale to be ready and get IP
+          for i in {1..30}; do
+            if IP=$(tailscale ip); then
+              echo "Tailscale IP: $IP"
+              break
+            fi
+            echo "Waiting for Tailscale to be ready... ($i/30)"
+            sleep 2
+          done
+          
+          # Verify Tailscale status
           tailscale status
 
       - name: Setup SSH
