@@ -63,21 +63,58 @@ jobs:
           version: "1.42.0"
           tags: tag:ci
 
-      - name: Deploy to server
-        env:
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+      - name: Wait for Tailscale
+        run: sleep 10  # Give Tailscale time to establish connection
+
+      - name: Debug Tailscale
         run: |
-          # Setup SSH
+          tailscale ip
+          tailscale status
+
+      - name: Setup SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        run: |
           mkdir -p ~/.ssh
           echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
-          echo "StrictHostKeyChecking no" > ~/.ssh/config
+          echo "StrictHostKeyChecking no" >> ~/.ssh/config
+          
+          # Debug SSH setup
+          ls -la ~/.ssh
+          ssh-keygen -l -f ~/.ssh/id_rsa || echo "Failed to read key"
 
-          # Deploy commands
+      - name: Test Connection
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+        run: |
+          # Print debug information
+          echo "Attempting to connect to $DEPLOY_USER@$DEPLOY_HOST"
+          ssh -v $DEPLOY_USER@$DEPLOY_HOST "echo 'SSH connection successful'"
+
+      - name: Deploy to local machine
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+        run: |
           ssh $DEPLOY_USER@$DEPLOY_HOST << 'EOF'
-            cd ~/Documents/vjt/hexray/practice/CI-CD  
+            set -x  # Enable command printing for debugging
+            
+            # Print environment info
+            pwd
+            whoami
+            echo "Current directory: $(pwd)"
+            
+            # Navigate to project directory
+            cd ~/Documents/vjt/hexray/practice/CI-CD || exit 1
+            
+            # Check if docker is running and start if needed
+            if ! systemctl is-active --quiet docker; then
+              sudo systemctl start docker
+            fi
+            
+            # Deploy
             docker-compose pull
             docker-compose up -d
             docker image prune -f
