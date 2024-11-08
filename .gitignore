@@ -71,5 +71,5 @@ share/python-wheels/
 logs
 !logs/.gitkeep
 
-.github/workflows/docker-build.yml
+docker-build.yml
 users.json
