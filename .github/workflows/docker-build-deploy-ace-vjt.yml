@@ -129,6 +129,48 @@ jobs:
              docker-compose pull && \
              docker-compose up -d"
 
+      - name: Enhanced Verification and Debug
+        run: |
+         ssh -i ~/.ssh/id_rsa ${{ secrets.VJT_ACE_USER }}@${{ secrets.VJT_ACE_HOST }} << 'EOSSH'
+          set -x
+          cd ~/vjt_ace_app
+          
+          echo "=== Docker Container Status ==="
+          docker-compose ps
+          
+          echo "=== Container Logs ==="
+          docker-compose logs
+          
+          echo "=== Network Status ==="
+          sudo netstat -tulpn | grep -E '(:80|:8501)'
+          
+          echo "=== Firewall Status ==="
+          sudo ufw status
+          
+          echo "=== Testing Local Access ==="
+          curl -v http://localhost:80
+          
+          echo "=== Container Network Info ==="
+          docker network ls
+          docker network inspect vjt_ace_app_default
+          
+          echo "=== Host Network Interface ==="
+          ip addr show
+          
+          echo "=== System Limits ==="
+          ulimit -n
+          
+          echo "=== SELinux Status ==="
+          if command -v getenforce &> /dev/null; then
+            getenforce
+          else
+            echo "SELinux not installed"
+          fi
+          
+          echo "=== Testing Container Health ==="
+          docker-compose exec -T streamlit curl -v http://localhost:8501/_stcore/health
+        EOSSH
+
       - name: Verify Deployment
         run: |
           echo "Waiting for application to be ready..."
