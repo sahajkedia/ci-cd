@@ -39,7 +39,7 @@ jobs:
           images: ghcr.io/${{ github.repository }}
           tags: |
             type=sha,format=long
-            type=raw,value=latest,enable=${{ github.ref == format('refs/heads/{0}', 'production') }}
+            type=raw,value=latest,enable=${{ github.ref == format('refs/heads/{0}', 'vjt-ace') }}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
@@ -59,39 +59,37 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Debug Environment
+        run: |
+          echo "Checking environment variables..."
+          echo "VJT_ACE_HOST is set: ${{ secrets.VJT_ACE_HOST != '' }}"
+          echo "VJT_ACE_USER is set: ${{ secrets.VJT_ACE_USER != '' }}"
+          echo "VJT_ACE_SSH_PRIVATE_KEY is set: ${{ secrets.VJT_ACE_SSH_PRIVATE_KEY != '' }}"
+
       - name: Setup SSH
-        env:
-          SSH_PRIVATE_KEY: ${{ secrets.VJT_ACE_SSH_PRIVATE_KEY }}
         run: |
           mkdir -p ~/.ssh
-          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+          echo "${{ secrets.VJT_ACE_SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
           echo "StrictHostKeyChecking no" >> ~/.ssh/config
 
-      - name: Create deployment directory
-        env:
-          SERVER_HOST: ${{ secrets.VJT_ACE_HOST }}
-          SERVER_USER: ${{ secrets.VJT_ACE_USER }}
+      - name: Test SSH Connection
         run: |
-          ssh $VJT_ACE_USER@$VJT_ACE_HOST << 'EOF'
-            # Create project directory if it doesn't exist
-            mkdir -p ~/vjt_ace_app
-          EOF
+          ssh -i ~/.ssh/id_rsa ${{ secrets.VJT_ACE_USER }}@${{ secrets.VJT_ACE_HOST }} "echo 'SSH connection test successful'"
+
+      - name: Create deployment directory
+        run: |
+          ssh -i ~/.ssh/id_rsa ${{ secrets.VJT_ACE_USER }}@${{ secrets.VJT_ACE_HOST }} "mkdir -p ~/vjt_ace_app"
 
       - name: Copy Docker Compose file
-        env:
-          SERVER_HOST: ${{ secrets.VJT_ACE_HOST }}
-          SERVER_USER: ${{ secrets.VJT_ACE_USER }}
         run: |
-          scp docker-compose.yml $VJT_ACE_USER@$VJT_ACE_HOST:~/vjt_ace_app/
+          scp -i ~/.ssh/id_rsa docker-compose.yml ${{ secrets.VJT_ACE_USER }}@${{ secrets.VJT_ACE_HOST }}:~/vjt_ace_app/
 
       - name: Deploy to server
         env:
-          SERVER_HOST: ${{ secrets.VJT_ACE_HOST }}
-          SERVER_USER: ${{ secrets.VJT_ACE_USER }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
-          ssh $VJT_ACE_USER@$VJT_ACE_HOST << 'EOF'
+          ssh -i ~/.ssh/id_rsa ${{ secrets.VJT_ACE_USER }}@${{ secrets.VJT_ACE_HOST }} << 'EOF'
             set -ex
             cd ~/vjt_ace_app
             
@@ -111,7 +109,7 @@ jobs:
             fi
             
             # Login to GitHub Container Registry
-            echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
             
             # Deploy
             docker-compose pull
