@@ -1,9 +1,9 @@
-name: Docker Build and Deploy
+name: Server Deployment
 
 on:
   push:
     branches:
-      - docker-build
+      - vjt-ace
     paths:
       - "Dockerfile"
       - "docker-compose.yml"
@@ -39,7 +39,7 @@ jobs:
           images: ghcr.io/${{ github.repository }}
           tags: |
             type=sha,format=long
-            type=raw,value=latest,enable=${{ github.ref == format('refs/heads/{0}', 'docker-build') }}
+            type=raw,value=latest,enable=${{ github.ref == format('refs/heads/{0}', 'vjt-ace') }}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
@@ -56,73 +56,42 @@ jobs:
     runs-on: ubuntu-22.04
     
     steps:
-      - name: Setup Tailscale
-        uses: tailscale/github-action@v2
-        with:
-          oauth-client-id: ${{ secrets.TAILSCALE_CLIENT_ID }}
-          oauth-secret: ${{ secrets.TAILSCALE_CLIENT_SECRET }}
-          tags: tag:ci
-
-      - name: Wait for Tailscale
-        run: |
-          # Wait for Tailscale to be ready and get IP
-          for i in {1..30}; do
-            if IP=$(tailscale ip); then
-              echo "Tailscale IP: $IP"
-              break
-            fi
-            echo "Waiting for Tailscale to be ready... ($i/30)"
-            sleep 2
-          done
-          
-          # Verify Tailscale status
-          tailscale status
+      - name: Checkout code
+        uses: actions/checkout@v4
 
       - name: Setup SSH
-        env:
-          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
         run: |
           mkdir -p ~/.ssh
-          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+          echo "${{ secrets.VJT_ACE_SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
           echo "StrictHostKeyChecking no" >> ~/.ssh/config
-          
-          # Debug SSH setup
-          ls -la ~/.ssh
-          ssh-keygen -l -f ~/.ssh/id_rsa || echo "Failed to read key"
 
-      - name: Test Connection
+      - name: Deploy to server
         env:
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Print debug information
-          echo "Attempting to connect to $DEPLOY_USER@$DEPLOY_HOST"
-          ssh -v $DEPLOY_USER@$DEPLOY_HOST "echo 'SSH connection successful'"
-
-      - name: Deploy to local machine
-        env:
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-        run: |
-          ssh $DEPLOY_USER@$DEPLOY_HOST << 'EOF'
-            set -x  # Enable command printing for debugging
+          ssh -i ~/.ssh/id_rsa ${{ secrets.VJT_ACE_USER }}@${{ secrets.VJT_ACE_HOST }} << 'EOF'
+            set -ex
+            cd ~/vjt_ace_app
             
-            # Print environment info
-            pwd
-            whoami
-            echo "Current directory: $(pwd)"
-            
-            # Navigate to project directory
-            cd ~/Documents/vjt/hexray/practice/CI-CD || exit 1
-            
-            # Check if docker is running and start if needed
-            if ! systemctl is-active --quiet docker; then
-              sudo systemctl start docker
+            # Setup Docker permissions
+            if ! groups | grep -q docker; then
+              sudo usermod -aG docker $USER
             fi
             
-            # Deploy
-            docker-compose pull
-            docker-compose up -d
-            docker image prune -f
+            # Create auth token file
+            echo "${{ secrets.GITHUB_TOKEN }}" > ~/auth_token.txt
+            
+            # Run docker commands with sudo
+            cat ~/auth_token.txt | sudo docker login ghcr.io -u ${{ github.actor }} --password-stdin
+            sudo docker-compose pull
+            sudo docker-compose up -d
+            sudo docker image prune -f
+            
+            # Cleanup
+            rm -f ~/auth_token.txt
+            
+            # Show status
+            sudo docker ps
+            sudo docker-compose logs --tail=50
           EOF
