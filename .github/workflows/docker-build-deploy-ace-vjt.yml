@@ -169,7 +169,7 @@ jobs:
           
           echo "=== Testing Container Health ==="
           docker-compose exec -T streamlit curl -v http://localhost:8501/_stcore/health
-        EOSSH
+         EOSSH
 
       - name: Verify Deployment
         run: |
