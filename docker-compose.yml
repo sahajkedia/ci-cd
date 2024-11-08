@@ -10,7 +10,6 @@ services:
       - STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
       - STREAMLIT_SERVER_ENABLE_CORS=true
       - STREAMLIT_SERVER_HEADLESS=true
-      - STREAMLIT_BROWSER_SERVER_ADDRESS=${VJT_ACE_HOST}  # Add your server's public IP or hostname
     volumes:
       - ./logs:/app/logs
       - ./config:/root/.streamlit
