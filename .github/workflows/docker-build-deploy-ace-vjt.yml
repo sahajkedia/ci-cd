@@ -3,7 +3,7 @@ name: Server Deployment
 on:
   push:
     branches:
-      - vjt-ace
+      - production
     paths:
       - "Dockerfile"
       - "docker-compose.yml"
@@ -74,8 +74,8 @@ jobs:
           SERVER_USER: ${{ secrets.VJT_ACE_USER }}
         run: |
           ssh $VJT_ACE_USER@$VJT_ACE_HOST << 'EOF'
-            
-            mkdir -p ~/app
+            # Create project directory if it doesn't exist
+            mkdir -p ~/vjt_ace_app
           EOF
 
       - name: Copy Docker Compose file
@@ -83,7 +83,7 @@ jobs:
           SERVER_HOST: ${{ secrets.VJT_ACE_HOST }}
           SERVER_USER: ${{ secrets.VJT_ACE_USER }}
         run: |
-          scp docker-compose.yml $VJT_ACE_USER@$VJT_ACE_HOST:~/app/
+          scp docker-compose.yml $VJT_ACE_USER@$VJT_ACE_HOST:~/vjt_ace_app/
 
       - name: Deploy to server
         env:
@@ -93,7 +93,7 @@ jobs:
         run: |
           ssh $VJT_ACE_USER@$VJT_ACE_HOST << 'EOF'
             set -ex
-            cd ~/app
+            cd ~/vjt_ace_app
             
             # Install Docker if not installed
             if ! command -v docker &> /dev/null; then
