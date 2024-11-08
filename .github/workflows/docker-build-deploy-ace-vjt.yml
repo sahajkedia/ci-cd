@@ -3,7 +3,7 @@ name: Server Deployment
 on:
   push:
     branches:
-      - vjt_ace
+      - vjt-ace
     paths:
       - "Dockerfile"
       - "docker-compose.yml"
