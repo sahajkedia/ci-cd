@@ -114,33 +114,57 @@ jobs:
             # Ensure port 80 is available
             sudo lsof -i :80 || true
             sudo fuser -k 80/tcp || true
+            
+            # Install curl if not present
+            if ! command -v curl &> /dev/null; then
+              sudo apt-get update && sudo apt-get install -y curl
+            fi
           EOSSH
 
       - name: Login and Deploy
         run: |
-          # Execute Docker login and deployment
           ssh -i ~/.ssh/id_rsa ${{ secrets.VJT_ACE_USER }}@${{ secrets.VJT_ACE_HOST }} \
             "cd ~/vjt_ace_app && \
              ./docker-login.sh '${{ secrets.GITHUB_TOKEN }}' '${{ github.actor }}' && \
              docker-compose pull && \
-             docker-compose up -d && \
-             docker image prune -f && \
-             docker-compose ps && \
-             docker-compose logs --tail=50"
+             docker-compose up -d"
 
       - name: Verify Deployment
         run: |
           echo "Waiting for application to be ready..."
           for i in {1..30}; do
-            if curl -s "http://${{ secrets.VJT_ACE_HOST }}/_stcore/health" > /dev/null; then
+            if ssh -i ~/.ssh/id_rsa ${{ secrets.VJT_ACE_USER }}@${{ secrets.VJT_ACE_HOST }} \
+               "curl -s http://localhost:80/_stcore/health" > /dev/null; then
               echo "Application is up and running!"
               echo "Access your application at: http://${{ secrets.VJT_ACE_HOST }}"
+              
+              # Show container status and logs
+              ssh -i ~/.ssh/id_rsa ${{ secrets.VJT_ACE_USER }}@${{ secrets.VJT_ACE_HOST }} \
+                "cd ~/vjt_ace_app && docker-compose ps && docker-compose logs --tail=50"
+              
               exit 0
             fi
             echo "Attempt $i: Application not ready yet..."
             sleep 10
           done
-          echo "Application failed to start within timeout"
+          
+          echo "Application failed to start within timeout. Collecting debug information..."
+          
+          ssh -i ~/.ssh/id_rsa ${{ secrets.VJT_ACE_USER }}@${{ secrets.VJT_ACE_HOST }} << 'EOSSH'
+            cd ~/vjt_ace_app
+            echo "Docker Compose Status:"
+            docker-compose ps
+            echo "\nContainer Logs:"
+            docker-compose logs
+            echo "\nPort Status:"
+            sudo netstat -tulpn | grep -E '(:80|:8501)'
+            echo "\nDocker Container Details:"
+            docker ps -a
+            echo "\nSystem Resources:"
+            free -h
+            df -h
+          EOSSH
+          
           exit 1
 
       - name: Cleanup
