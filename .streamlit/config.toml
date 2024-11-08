@@ -6,13 +6,18 @@ textColor = "#262730"
 font = "sans serif"
 
 [server]
-enableCORS = true
-enableXsrfProtection = false
+enableCORS = false
+enableXsrfProtection = true
 port = 8501
 address = "0.0.0.0"
 headless = true
+baseUrlPath = "/"
+maxUploadSize = 50
+runOnSave = false
 
 [browser]
 serverAddress = "" 
 serverPort = 8501
 gatherUsageStats = false
+
+
