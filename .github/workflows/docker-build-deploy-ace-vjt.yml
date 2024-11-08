@@ -10,7 +10,7 @@ on:
       - "**.py"
       - "requirements.txt"
       - ".github/workflows/**"
-      - ".streamlit/**"  # Added to trigger on streamlit config changes
+      - ".streamlit/**"
 
 jobs:
   build-and-push:
@@ -80,10 +80,14 @@ jobs:
           scp -i ~/.ssh/id_rsa docker-compose.prod.yml ${{ secrets.VJT_ACE_USER }}@${{ secrets.VJT_ACE_HOST }}:~/vjt_ace_app/docker-compose.yml
           scp -i ~/.ssh/id_rsa .streamlit/config.toml ${{ secrets.VJT_ACE_USER }}@${{ secrets.VJT_ACE_HOST }}:~/vjt_ace_app/.streamlit/
 
+      - name: Create Docker login script
+        run: |
+          echo '#!/bin/bash
+          echo "$1" | docker login ghcr.io -u "$2" --password-stdin' > docker-login.sh
+          chmod +x docker-login.sh
+          scp -i ~/.ssh/id_rsa docker-login.sh ${{ secrets.VJT_ACE_USER }}@${{ secrets.VJT_ACE_HOST }}:~/vjt_ace_app/
+
       - name: Deploy to server
-        env:
-          GITHUB_ACTOR: ${{ github.actor }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           ssh -i ~/.ssh/id_rsa ${{ secrets.VJT_ACE_USER }}@${{ secrets.VJT_ACE_HOST }} << 'EOSSH'
             set -ex
@@ -110,32 +114,19 @@ jobs:
             # Ensure port 80 is available
             sudo lsof -i :80 || true
             sudo fuser -k 80/tcp || true
-            
-            # Login to GitHub Container Registry
-            echo "${GITHUB_TOKEN}" | docker login ghcr.io -u ${GITHUB_ACTOR} --password-stdin
-            
-            # Pull new image and deploy
-            docker-compose pull
-            docker-compose up -d
-            
-            # Cleanup old images
-            docker image prune -f
-            
-            # Wait for container to be healthy
-            echo "Waiting for container to be healthy..."
-            for i in {1..30}; do
-              if docker-compose ps | grep "Up" > /dev/null; then
-                echo "Container is up!"
-                break
-              fi
-              echo "Waiting... ($i/30)"
-              sleep 2
-            done
-            
-            # Show container status and logs
-            docker-compose ps
-            docker-compose logs --tail=50
-          EOSSH
+EOSSH
+
+      - name: Login and Deploy
+        run: |
+          # Execute Docker login and deployment
+          ssh -i ~/.ssh/id_rsa ${{ secrets.VJT_ACE_USER }}@${{ secrets.VJT_ACE_HOST }} \
+            "cd ~/vjt_ace_app && \
+             ./docker-login.sh '${{ secrets.GITHUB_TOKEN }}' '${{ github.actor }}' && \
+             docker-compose pull && \
+             docker-compose up -d && \
+             docker image prune -f && \
+             docker-compose ps && \
+             docker-compose logs --tail=50"
 
       - name: Verify Deployment
         run: |
@@ -151,3 +142,8 @@ jobs:
           done
           echo "Application failed to start within timeout"
           exit 1
+
+      - name: Cleanup
+        if: always()
+        run: |
+          ssh -i ~/.ssh/id_rsa ${{ secrets.VJT_ACE_USER }}@${{ secrets.VJT_ACE_HOST }} "rm -f ~/vjt_ace_app/docker-login.sh"
