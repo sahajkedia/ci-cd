@@ -112,6 +112,70 @@ jobs:
             docker-compose logs --tail=50
           EOF
 
+      - name: Debug Deployment
+        run: |
+          ssh -i ~/.ssh/id_rsa ${{ secrets.VJT_ACE_USER }}@${{ secrets.VJT_ACE_HOST }} << 'EOF'
+            cd ~/vjt_ace_app
+            
+            echo "=== System Info ==="
+            uname -a
+            
+            echo "=== Docker Info ==="
+            docker info
+            
+            echo "=== Network Status ==="
+            sudo netstat -tulpn | grep 8501
+            
+            echo "=== Firewall Status ==="
+            sudo ufw status
+            
+            echo "=== Container Status ==="
+            docker ps
+            
+            echo "=== Container Logs ==="
+            docker-compose logs
+            
+            echo "=== Local Access Test ==="
+            curl -v localhost:8501
+            
+            echo "=== Process Binding ==="
+            sudo lsof -i :8501
+            
+            echo "=== Docker Networks ==="
+            docker network ls
+            docker network inspect bridge
+            
+            echo "=== System Logs ==="
+            tail -n 50 /var/log/syslog | grep docker
+          EOF
+
+      - name: Configure System
+        run: |
+          ssh -i ~/.ssh/id_rsa ${{ secrets.VJT_ACE_USER }}@${{ secrets.VJT_ACE_HOST }} << 'EOF'
+            # Enable and configure firewall
+            sudo ufw allow 22/tcp
+            sudo ufw allow 8501/tcp
+            sudo ufw --force enable
+            
+            # Verify configuration
+            sudo ufw status
+            
+            # Restart Docker service
+            sudo systemctl restart docker
+            
+            # Redeploy application
+            cd ~/vjt_ace_app
+            docker-compose down
+            docker-compose pull
+            docker-compose up -d
+            
+            # Wait for startup
+            sleep 10
+            
+            # Verify deployment
+            curl -v localhost:8501
+          EOF
+
       - name: Verify Deployment
         run: |
           echo "Waiting for application to be ready..."
