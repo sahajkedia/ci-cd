@@ -10,6 +10,7 @@ on:
       - "**.py"
       - "requirements.txt"
       - ".github/workflows/**"
+      - ".streamlit/**"  # Added to trigger on streamlit config changes
 
 jobs:
   build-and-push:
@@ -66,18 +67,25 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           echo "StrictHostKeyChecking no" >> ~/.ssh/config
 
-      - name: Prepare docker-compose file
+      - name: Create deployment directory
         run: |
-          sed "s|\${GITHUB_REPOSITORY}|${{ github.repository }}|g" docker-compose.yml > docker-compose.prod.yml
-          cat docker-compose.prod.yml
+          ssh -i ~/.ssh/id_rsa ${{ secrets.VJT_ACE_USER }}@${{ secrets.VJT_ACE_HOST }} "mkdir -p ~/vjt_ace_app/.streamlit"
 
-      - name: Copy Docker Compose file
+      - name: Prepare and copy configuration files
         run: |
+          # Prepare docker-compose file
+          sed "s|\${GITHUB_REPOSITORY}|${{ github.repository }}|g" docker-compose.yml > docker-compose.prod.yml
+          
+          # Copy files to server
           scp -i ~/.ssh/id_rsa docker-compose.prod.yml ${{ secrets.VJT_ACE_USER }}@${{ secrets.VJT_ACE_HOST }}:~/vjt_ace_app/docker-compose.yml
+          scp -i ~/.ssh/id_rsa .streamlit/config.toml ${{ secrets.VJT_ACE_USER }}@${{ secrets.VJT_ACE_HOST }}:~/vjt_ace_app/.streamlit/
 
       - name: Deploy to server
+        env:
+          GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          ssh -i ~/.ssh/id_rsa ${{ secrets.VJT_ACE_USER }}@${{ secrets.VJT_ACE_HOST }} << 'EOF'
+          ssh -i ~/.ssh/id_rsa ${{ secrets.VJT_ACE_USER }}@${{ secrets.VJT_ACE_HOST }} << 'EOSSH'
             set -ex
             cd ~/vjt_ace_app
             
@@ -104,19 +112,30 @@ jobs:
             sudo fuser -k 80/tcp || true
             
             # Login to GitHub Container Registry
-            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+            echo "${GITHUB_TOKEN}" | docker login ghcr.io -u ${GITHUB_ACTOR} --password-stdin
             
-            # Deploy
+            # Pull new image and deploy
             docker-compose pull
             docker-compose up -d
             
-            # Cleanup
+            # Cleanup old images
             docker image prune -f
             
-            # Check deployment status
-            docker ps
+            # Wait for container to be healthy
+            echo "Waiting for container to be healthy..."
+            for i in {1..30}; do
+              if docker-compose ps | grep "Up" > /dev/null; then
+                echo "Container is up!"
+                break
+              fi
+              echo "Waiting... ($i/30)"
+              sleep 2
+            done
+            
+            # Show container status and logs
+            docker-compose ps
             docker-compose logs --tail=50
-          EOF
+          EOSSH
 
       - name: Verify Deployment
         run: |
