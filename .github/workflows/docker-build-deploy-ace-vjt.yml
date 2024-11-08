@@ -114,7 +114,7 @@ jobs:
             # Ensure port 80 is available
             sudo lsof -i :80 || true
             sudo fuser -k 80/tcp || true
-EOSSH
+          EOSSH
 
       - name: Login and Deploy
         run: |
