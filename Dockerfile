@@ -6,6 +6,7 @@ RUN apt-get update && apt-get install -y \
     build-essential \
     curl \
     software-properties-common \
+    procps \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
@@ -15,27 +16,18 @@ COPY . .
 
 EXPOSE 8501
 
-HEALTHCHECK CMD curl --fail http://localhost:8501/_stcore/health || exit 1
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8501/_stcore/health || exit 1
 
-# Set environment variables for production
-ENV STREAMLIT_SERVER_PORT=8501
-ENV STREAMLIT_SERVER_ADDRESS=0.0.0.0
-ENV STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
-ENV STREAMLIT_SERVER_RUN_ON_SAVE=false
-ENV STREAMLIT_THEME_BASE="light"
-ENV STREAMLIT_DEVELOPMENT_MODE=false
-ENV STREAMLIT_GLOBAL_DEVELOPMENT_MODE=false
+ENV STREAMLIT_SERVER_PORT=8501 \
+    STREAMLIT_SERVER_ADDRESS=0.0.0.0 \
+    STREAMLIT_BROWSER_GATHER_USAGE_STATS=false \
+    STREAMLIT_SERVER_RUN_ON_SAVE=false \
+    STREAMLIT_DEVELOPMENT_MODE=false
 
-# Run Streamlit in production mode
-CMD streamlit run app.py \
-    --server.port=8501 \
-    --server.address=0.0.0.0 \
-    --server.baseUrlPath=/ \
-    --server.enableCORS=true \
-    --server.enableXsrfProtection=false \
-    --server.maxUploadSize=50 \
-    --browser.serverAddress=0.0.0.0 \
-    --browser.gatherUsageStats=false \
-    --global.developmentMode=false \
-    --global.showWarningOnDirectExecution=true \
-    --logger.level=error
+ENTRYPOINT ["streamlit"]
+CMD ["run", "app.py", \
+    "--server.port=8501", \
+    "--server.address=0.0.0.0", \
+    "--server.enableCORS=true", \
+    "--server.enableXsrfProtection=false"]
