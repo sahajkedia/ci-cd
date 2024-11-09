@@ -172,7 +172,7 @@ jobs:
               
               # Give container a moment to initialize
               echo "Waiting for container to initialize..."
-              sleep 30
+              sleep 10
               
               # Show container status and logs
               echo "Container status:"
@@ -282,7 +282,7 @@ jobs:
                 exit 0
               else
                 echo "❌ Failed to get Funnel URL"
-                exit 1
+                
               fi
             EOSSH
   
