@@ -111,14 +111,17 @@ jobs:
               sudo chmod +x /usr/local/bin/docker-compose
             fi
             
-            # Ensure port 80 is available
-            sudo lsof -i :80 || true
-            sudo fuser -k 80/tcp || true
+            # Ensure ports are available
+            sudo lsof -i :8888 || true
+            sudo fuser -k 8888/tcp || true
             
             # Install curl if not present
             if ! command -v curl &> /dev/null; then
               sudo apt-get update && sudo apt-get install -y curl
             fi
+            
+            # Ensure UFW allows our port
+            sudo ufw allow 8888/tcp || true
           EOSSH
 
       - name: Login and Deploy
@@ -134,9 +137,9 @@ jobs:
           echo "Waiting for application to be ready..."
           for i in {1..30}; do
             if ssh -i ~/.ssh/id_rsa ${{ secrets.VJT_ACE_USER }}@${{ secrets.VJT_ACE_HOST }} \
-               "curl -s http://localhost:80/_stcore/health" > /dev/null; then
+               "curl -s http://localhost:8888/_stcore/health" > /dev/null; then
               echo "Application is up and running!"
-              echo "Access your application at: http://${{ secrets.VJT_ACE_HOST }}"
+              echo "Access your application at: http://${{ secrets.VJT_ACE_HOST }}:8888"
               
               # Show container status and logs
               ssh -i ~/.ssh/id_rsa ${{ secrets.VJT_ACE_USER }}@${{ secrets.VJT_ACE_HOST }} \
@@ -157,12 +160,14 @@ jobs:
             echo "\nContainer Logs:"
             docker-compose logs
             echo "\nPort Status:"
-            sudo netstat -tulpn | grep -E '(:80|:8501)'
+            sudo netstat -tulpn | grep -E '(:8888|:8501)'
             echo "\nDocker Container Details:"
             docker ps -a
             echo "\nSystem Resources:"
             free -h
             df -h
+            echo "\nFirewall Status:"
+            sudo ufw status | grep 8888
           EOSSH
           
           exit 1
