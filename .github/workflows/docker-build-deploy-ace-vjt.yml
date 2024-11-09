@@ -170,16 +170,26 @@ jobs:
              ./docker-login.sh '${{ secrets.GITHUB_TOKEN }}' '${{ github.actor }}' && \
              docker-compose pull && \
              docker-compose up -d"
-             
+
       - name: Setup Tailscale Funnel
         run: |
                ssh -i ~/.ssh/id_rsa ${{ secrets.VJT_ACE_USER }}@${{ secrets.VJT_ACE_HOST }} "
-                 # Enable Tailscale Funnel for the app
-                 sudo tailscale funnel 80
+                 # Kill any existing funnel process
+                 sudo pkill -f 'tailscale funnel' || true
                  
-                 # Show Funnel status and public URL
-                 echo 'Funnel Status and Public URL:'
+                 # Start funnel in the background
+                 sudo nohup tailscale funnel 80 </dev/null >/tmp/funnel.log 2>&1 &
+                 
+                 # Wait for funnel to start
+                 sleep 5
+                 
+                 # Show status without running in foreground
+                 echo 'Funnel Status:'
                  tailscale funnel status
+                 
+                 # Show the public URL
+                 echo 'Public URL:'
+                 tailscale funnel status | grep 'https://' || echo 'URL not found'
                "
 
       - name: Verify Deployment and Show Tailscale IP
