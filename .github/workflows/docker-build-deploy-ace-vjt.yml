@@ -222,7 +222,7 @@ jobs:
                 tail -n 5 /tmp/tailscale-funnel.log || true
                 
                 echo "Deployment complete!"
-                exit 0
+                
               EOSSH
 
       - name: Verify Deployment
