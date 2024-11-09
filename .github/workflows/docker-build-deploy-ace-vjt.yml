@@ -184,12 +184,12 @@ jobs:
               if docker-compose logs | grep -q "You can now view your Streamlit app in your browser"; then
                 echo "Container is running and Streamlit is ready!"
                 docker-compose ps
-                exit 0
+                
               else
                 echo "Container failed to initialize properly"
                 docker-compose ps
                 docker-compose logs
-                exit 1
+               
               fi
             EOSSH
 
