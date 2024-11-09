@@ -25,7 +25,7 @@ ENV STREAMLIT_SERVER_BASE_URL_PATH=/
 ENV STREAMLIT_BROWSER_SERVER_ADDRESS=localhost
 ENV STREAMLIT_BROWSER_SERVER_PORT=80
 ENV STREAMLIT_SERVER_ENABLE_CORS=true
-ENV STREAMLIT_SERVER_ENABLE_XSRF_PROTECTION=true
+ENV STREAMLIT_SERVER_ENABLE_XSRF_PROTECTION=false
 ENV STREAMLIT_SERVER_HEADLESS=true
 ENV STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
 ENV STREAMLIT_THEME_BASE="light"
@@ -38,7 +38,7 @@ CMD ["streamlit", "run", "app.py", \
     "--server.address=0.0.0.0", \
     "--server.baseUrlPath=/", \
     "--server.enableCORS=false", \
-    "--server.enableXsrfProtection=true", \
+    "--server.enableXsrfProtection=false", \
     "--server.maxUploadSize=50", \
     "--server.enableWebsocketCompression=true", \
     "--browser.serverAddress=localhost", \
