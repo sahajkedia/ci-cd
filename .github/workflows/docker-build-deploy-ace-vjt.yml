@@ -173,23 +173,27 @@ jobs:
 
       - name: Setup Tailscale Funnel
         run: |
-               ssh -i ~/.ssh/id_rsa ${{ secrets.VJT_ACE_USER }}@${{ secrets.VJT_ACE_HOST }} '
-                 echo "Starting Tailscale Funnel setup..."
-                 
-                 # Stop any existing funnel
-                 sudo pkill -f "tailscale funnel" || true
-                 
-                 # Start funnel in background
-                 (sudo tailscale funnel 80 &)
-                 
-                 # Give it a moment to start
-                 sleep 5
-                 
-                 # Check funnel status
-                 echo "Checking Funnel Status..."
-                 tailscale funnel status || true
-               ' || echo "SSH command failed but continuing..."
-
+               # Create a script to run on the remote server
+               cat << 'EOF' > setup_funnel.sh
+               #!/bin/bash
+               echo "Starting Tailscale Funnel setup..."
+               sudo pkill -f "tailscale funnel" || true
+               sudo tailscale funnel 80 &
+               sleep 5
+               echo "Checking Funnel Status..."
+               tailscale funnel status
+               EOF
+               
+               # Copy script to server
+               scp -i ~/.ssh/id_rsa setup_funnel.sh ${{ secrets.VJT_ACE_USER }}@${{ secrets.VJT_ACE_HOST }}:~/
+               
+               # Execute script
+               ssh -i ~/.ssh/id_rsa ${{ secrets.VJT_ACE_USER }}@${{ secrets.VJT_ACE_HOST }} "
+                 chmod +x ~/setup_funnel.sh
+                 ~/setup_funnel.sh
+                 rm ~/setup_funnel.sh
+               "
+               
       - name: Verify Deployment and Show Tailscale IP
         run: |
           echo "Waiting for application to be ready..."
