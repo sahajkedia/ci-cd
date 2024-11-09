@@ -199,29 +199,32 @@ jobs:
                 set -ex
                 echo "Setting up Tailscale Funnel..."
                 
-                # Check if funnel is already running and working
-                if tailscale funnel status | grep -q "Available on the internet"; then
-                  echo "Funnel is already configured and working!"
-                  tailscale funnel status
+                # Check if funnel is already running
+                if pgrep -f "tailscale funnel" > /dev/null; then
+                  echo "Funnel is already running"
+                  tailscale funnel status || true
                   exit 0
                 fi
                 
-                # If not, set up the funnel
+                # Run funnel in background
                 echo "Setting up new funnel..."
-                sudo tailscale funnel 80
+                sudo nohup tailscale funnel 80 > /tmp/tailscale-funnel.log 2>&1 &
                 
+                # Wait briefly for it to start
+                sleep 5
                 
+                # Show status
+                echo "Funnel status:"
+                tailscale funnel status || true
                 
+                # Check the log
+                echo "Funnel log:"
+                tail -n 5 /tmp/tailscale-funnel.log || true
                 
-                
-                
-                
-                
-                
-                # Exit successfully since we know the service works
+                echo "Deployment complete!"
                 exit 0
               EOSSH
-    
+
       - name: Verify Deployment
         run: |
               ssh -i ~/.ssh/id_rsa ${{ secrets.VJT_ACE_USER }}@${{ secrets.VJT_ACE_HOST }} << 'EOSSH'
