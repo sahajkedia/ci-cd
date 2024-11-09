@@ -205,18 +205,7 @@ jobs:
                 # Start funnel in proper background mode
                 (sudo tailscale funnel 80 > /tmp/tailscale-funnel.log 2>&1 </dev/null & disown)
                 
-                # Wait for funnel to initialize
-                echo "Waiting for funnel to initialize..."
-                for i in {1..10}; do
-                  if tailscale funnel status 2>/dev/null | grep -q "https://"; then
-                    echo "✅ Funnel is running!"
-                    FUNNEL_URL=$(tailscale funnel status | grep 'https://' | head -n1)
-                    echo "URL: $FUNNEL_URL"
-                    ps aux | grep "tailscale funnel" || true
-                    exit 0
-                  fi
-                  sleep 1
-                done
+                
                 
                 # Just display status and exit successfully anyway
                 echo "Final status check:"
