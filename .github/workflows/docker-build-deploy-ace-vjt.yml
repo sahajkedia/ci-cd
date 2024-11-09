@@ -177,11 +177,39 @@ jobs:
                cat << 'EOF' > setup_funnel.sh
                #!/bin/bash
                echo "Starting Tailscale Funnel setup..."
-               sudo pkill -f "tailscale funnel" || true
-               sudo tailscale funnel 80 &
+               
+               # Create systemd service file for Tailscale Funnel
+               sudo tee /etc/systemd/system/tailscale-funnel.service << 'SERVICEEOF'
+               [Unit]
+               Description=Tailscale Funnel Service
+               After=network.target tailscaled.service
+               Wants=tailscaled.service
+     
+               [Service]
+               Type=simple
+               ExecStart=/usr/bin/tailscale funnel 80
+               Restart=always
+               RestartSec=5
+               User=root
+     
+               [Install]
+               WantedBy=multi-user.target
+               SERVICEEOF
+     
+               # Reload systemd and start service
+               sudo systemctl daemon-reload
+               sudo systemctl enable tailscale-funnel
+               sudo systemctl restart tailscale-funnel
+               
+               # Wait for service to start
                sleep 5
-               echo "Checking Funnel Status..."
-               tailscale funnel status
+               
+               # Show status
+               echo "Funnel Status:"
+               tailscale funnel status || true
+               
+               echo "Service Status:"
+               sudo systemctl status tailscale-funnel --no-pager || true
                EOF
                
                # Copy script to server
@@ -193,7 +221,7 @@ jobs:
                  ~/setup_funnel.sh
                  rm ~/setup_funnel.sh
                "
-               
+
       - name: Verify Deployment and Show Tailscale IP
         run: |
           echo "Waiting for application to be ready..."
