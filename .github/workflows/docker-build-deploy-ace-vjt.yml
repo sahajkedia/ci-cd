@@ -73,45 +73,29 @@ jobs:
 
       - name: Setup Tailscale
         run: |
-            ssh -i ~/.ssh/id_rsa ${{ secrets.VJT_ACE_USER }}@${{ secrets.VJT_ACE_HOST }} "
-              # Install Tailscale if not already installed
-              if ! command -v tailscale &> /dev/null; then
-                curl -fsSL https://tailscale.com/install.sh | sudo sh
-              fi
-              
-              # Create a one-time login script
-              echo '#!/bin/bash
-              if tailscale status | grep -q NeedsLogin; then
-                echo \"Tailscale needs login...\"
-                tailscale login
-              else
-                echo \"Tailscale already logged in\"
+          ssh -i ~/.ssh/id_rsa ${{ secrets.VJT_ACE_USER }}@${{ secrets.VJT_ACE_HOST }} "
+            # Install Tailscale if not already installed
+            if ! command -v tailscale &> /dev/null; then
+              curl -fsSL https://tailscale.com/install.sh | sudo sh
+            fi
+
+            # Ensure Tailscale is running and logged in
+            if ! tailscale status > /dev/null 2>&1 || tailscale status | grep -q NeedsLogin; then
+              echo 'Tailscale needs login...'
+              tailscale login
+            fi
+
+            # Wait for Tailscale to be ready
+            for i in {1..30}; do
+              if TAILSCALE_IP=\$(tailscale ip -4) && [ ! -z \"\$TAILSCALE_IP\" ]; then
+                echo \"Tailscale IP: \$TAILSCALE_IP\"
                 tailscale status
-              fi' > ~/tailscale_login.sh
-              
-              chmod +x ~/tailscale_login.sh
-              
-              # Run the login script if needed
-              if ! tailscale status | grep -q 'Tailscale'; then
-                echo \"Running Tailscale login...\"
-                ~/tailscale_login.sh
+                break
               fi
-              
-              # Wait for Tailscale to be ready
-              for i in {1..30}; do
-                if TAILSCALE_IP=\$(tailscale ip -4) && [ ! -z \"\$TAILSCALE_IP\" ]; then
-                  echo \"Tailscale IP: \$TAILSCALE_IP\"
-                  tailscale status
-                  exit 0
-                fi
-                echo \"Waiting for Tailscale IP... Attempt \$i\"
-                sleep 2
-              done
-              
-              echo \"Failed to get Tailscale IP\"
-              tailscale status
-              exit 1
-            "
+              echo \"Waiting for Tailscale IP... Attempt \$i/30\"
+              sleep 2
+            done
+          "
 
       - name: Prepare and copy configuration files
         run: |
@@ -129,213 +113,189 @@ jobs:
           chmod +x docker-login.sh
           scp -i ~/.ssh/id_rsa docker-login.sh ${{ secrets.VJT_ACE_USER }}@${{ secrets.VJT_ACE_HOST }}:~/vjt_ace_app/
 
-      - name: Deploy to server
+      - name: Prepare Server
         run: |
           ssh -i ~/.ssh/id_rsa ${{ secrets.VJT_ACE_USER }}@${{ secrets.VJT_ACE_HOST }} << 'EOSSH'
             set -ex
             cd ~/vjt_ace_app
             
-            # Stop any running containers
+            # Stop everything that might be using port 80
             docker-compose down || true
+            sudo systemctl stop tailscale-funnel.service || true
+            sudo systemctl disable tailscale-funnel.service || true
+            sudo tailscale funnel reset || true
+            sudo tailscale serve reset || true
+            sudo pkill -f "tailscale funnel" || true
+            sudo fuser -k 80/tcp || true
             
-            # Install Docker if not installed
+            # Install Docker if needed
             if ! command -v docker &> /dev/null; then
-              echo "Docker not found, installing..."
+              echo "Installing Docker..."
               curl -fsSL https://get.docker.com -o get-docker.sh
               sudo sh get-docker.sh
               sudo usermod -aG docker $USER
+              sudo systemctl enable docker
+              sudo systemctl start docker
             fi
             
-            # Install Docker Compose if not installed
+            # Install Docker Compose if needed
             if ! command -v docker-compose &> /dev/null; then
-              echo "Docker Compose not found, installing..."
+              echo "Installing Docker Compose..."
               sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
               sudo chmod +x /usr/local/bin/docker-compose
             fi
-            
-            # Ensure port 80 is available
-            sudo lsof -i :80 || true
-            sudo fuser -k 80/tcp || true
-            
-            # Install curl if not present
-            if ! command -v curl &> /dev/null; then
-              sudo apt-get update && sudo apt-get install -y curl
-            fi
+
+            # Wait for port 80 to be free
+            echo "Ensuring port 80 is free..."
+            for i in {1..30}; do
+              if ! sudo lsof -i :80 && ! sudo netstat -tuln | grep ":80"; then
+                echo "Port 80 is free"
+                break
+              fi
+              echo "Port 80 still in use, attempt $i/30"
+              sleep 2
+            done
           EOSSH
 
-      - name: Login and Deploy
+      - name: Deploy Container
         run: |
-          ssh -i ~/.ssh/id_rsa ${{ secrets.VJT_ACE_USER }}@${{ secrets.VJT_ACE_HOST }} \
-            "cd ~/vjt_ace_app && \
-             ./docker-login.sh '${{ secrets.GITHUB_TOKEN }}' '${{ github.actor }}' && \
-             docker-compose pull && \
-             docker-compose up -d"
+          ssh -i ~/.ssh/id_rsa ${{ secrets.VJT_ACE_USER }}@${{ secrets.VJT_ACE_HOST }} << 'EOSSH'
+            set -ex
+            cd ~/vjt_ace_app
+            
+            # Login to GitHub Container Registry
+            ./docker-login.sh '${{ secrets.GITHUB_TOKEN }}' '${{ github.actor }}'
+            
+            # Pull and start the container
+            docker-compose pull
+            docker-compose up -d
+
+            # Wait for container to be healthy
+            echo "Waiting for container to be healthy..."
+            for i in {1..30}; do
+              if docker-compose ps | grep -q "healthy"; then
+                echo "Container is healthy!"
+                break
+              fi
+              echo "Attempt $i: Waiting for container health check..."
+              sleep 5
+            done
+
+            # Show container status
+            docker-compose ps
+            docker-compose logs --tail=20
+          EOSSH
 
       - name: Setup Tailscale Funnel
         run: |
-               # Create a script to run on the remote server
-               cat << 'EOF' > setup_funnel.sh
-               #!/bin/bash
-               set -e
-           
-               echo "Starting Tailscale Funnel setup..."
-           
-               # Function to cleanup existing funnel configurations
-               cleanup_funnel() {
-                   echo "Cleaning up existing funnel configurations..."
-                   # Stop the funnel service if running
-                   sudo systemctl stop tailscale-funnel.service 2>/dev/null || true
-                   sudo systemctl disable tailscale-funnel.service 2>/dev/null || true
-                   
-                   # Remove existing funnel configurations
-                   sudo tailscale funnel reset || true
-                   sudo tailscale serve reset || true
-                   
-                   # Kill any existing tailscale funnel processes
-                   sudo pkill -f "tailscale funnel" || true
-                   
-                   # Wait for port to be available
-                   echo "Waiting for port 80 to be free..."
-                   for i in {1..10}; do
-                       if ! sudo lsof -i :80 >/dev/null 2>&1; then
-                           break
-                       fi
-                       sleep 2
-                   done
-               }
-           
-               # Cleanup existing configurations
-               cleanup_funnel
-           
-               # Create systemd service file for Tailscale Funnel
-               sudo tee /etc/systemd/system/tailscale-funnel.service << 'SERVICEEOF'
-               [Unit]
-               Description=Tailscale Funnel Service
-               After=network.target tailscaled.service
-               Wants=tailscaled.service
-           
-               [Service]
-               Type=simple
-               ExecStartPre=/bin/sleep 5
-               ExecStart=/usr/bin/tailscale funnel 80
-               Restart=on-failure
-               RestartSec=10
-               User=root
-               KillMode=process
-               KillSignal=SIGTERM
-           
-               [Install]
-               WantedBy=multi-user.target
-               SERVICEEOF
-           
-               # Reload systemd
-               echo "Reloading systemd configuration..."
-               sudo systemctl daemon-reload
-           
-               # Enable and start the service
-               echo "Enabling and starting Tailscale Funnel service..."
-               sudo systemctl enable tailscale-funnel
-               
-               # Ensure port 80 is available before starting
-               sudo fuser -k 80/tcp || true
-               sleep 2
-               
-               sudo systemctl start tailscale-funnel
-           
-               # Wait for service to be ready
-               echo "Waiting for Tailscale Funnel service to start..."
-               for i in {1..30}; do
-                   if sudo systemctl is-active --quiet tailscale-funnel.service; then
-                       echo "Service is active!"
-                       break
-                   fi
-                   echo "Attempt $i/30: Service not ready yet..."
-                   sleep 2
-               done
-           
-               # Check final status
-               if sudo systemctl is-active --quiet tailscale-funnel.service; then
-                   echo "Funnel Status:"
-                   tailscale funnel status || true
-                   
-                   echo "Service Status:"
-                   sudo systemctl status tailscale-funnel --no-pager || true
-                   
-                   # Set up serving on port 80
-                   echo "Setting up Tailscale serve..."
-                   sudo tailscale serve 80 || true
-               else
-                   echo "Error: Service failed to start properly"
-                   echo "Debugging information:"
-                   sudo systemctl status tailscale-funnel --no-pager || true
-                   sudo journalctl -u tailscale-funnel -n 50 --no-pager
-                   echo "Port 80 status:"
-                   sudo lsof -i :80 || true
-                   echo "Tailscale status:"
-                   tailscale status || true
-                   exit 1
-               fi
-               EOF
-               
-               # Copy script to server
-               scp -i ~/.ssh/id_rsa setup_funnel.sh ${{ secrets.VJT_ACE_USER }}@${{ secrets.VJT_ACE_HOST }}:~/
-               
-               # Execute script
-               ssh -i ~/.ssh/id_rsa ${{ secrets.VJT_ACE_USER }}@${{ secrets.VJT_ACE_HOST }} "
-                 chmod +x ~/setup_funnel.sh
-                 ~/setup_funnel.sh
-                 rm ~/setup_funnel.sh
-               "
-               
-      - name: Verify Deployment and Show Tailscale IP
-        run: |
-          echo "Waiting for application to be ready..."
+          # Create funnel setup script
+          cat << 'EOF' > setup_funnel.sh
+          #!/bin/bash
+          set -e
+
+          echo "Setting up Tailscale Funnel..."
+          
+          # Verify container is running
+          if ! docker ps | grep -q "streamlit"; then
+            echo "Error: Streamlit container is not running"
+            docker ps -a
+            exit 1
+          fi
+
+          # Create systemd service file
+          sudo tee /etc/systemd/system/tailscale-funnel.service << 'SERVICEEOF'
+          [Unit]
+          Description=Tailscale Funnel Service
+          After=network.target tailscaled.service docker.service
+          Wants=tailscaled.service
+          RequiresMountsFor=/var/run/docker.sock
+
+          [Service]
+          Type=simple
+          ExecStartPre=/bin/sh -c 'until nc -z localhost 80; do sleep 1; done'
+          ExecStart=/usr/bin/tailscale funnel 80
+          Restart=on-failure
+          RestartSec=10
+          User=root
+
+          [Install]
+          WantedBy=multi-user.target
+          SERVICEEOF
+
+          # Reload systemd and start service
+          sudo systemctl daemon-reload
+          sudo systemctl enable tailscale-funnel
+          sudo systemctl restart tailscale-funnel
+
+          # Wait for service to be ready
+          echo "Waiting for funnel service..."
           for i in {1..30}; do
-            if ssh -i ~/.ssh/id_rsa ${{ secrets.VJT_ACE_USER }}@${{ secrets.VJT_ACE_HOST }} \
-               "curl -s http://localhost:80/_stcore/health" > /dev/null; then
-              echo "Application is up and running!"
-              
-              # Get and display Tailscale IP
-              TAILSCALE_IP=$(ssh -i ~/.ssh/id_rsa ${{ secrets.VJT_ACE_USER }}@${{ secrets.VJT_ACE_HOST }} "tailscale ip -4")
-              echo "Access your application at: http://$TAILSCALE_IP:80"
-              
-              # Show Tailscale status
-              ssh -i ~/.ssh/id_rsa ${{ secrets.VJT_ACE_USER }}@${{ secrets.VJT_ACE_HOST }} "tailscale status"
-              
-              # Show container status and logs
-              ssh -i ~/.ssh/id_rsa ${{ secrets.VJT_ACE_USER }}@${{ secrets.VJT_ACE_HOST }} \
-                "cd ~/vjt_ace_app && docker-compose ps && docker-compose logs --tail=50"
-              
+            if sudo systemctl is-active --quiet tailscale-funnel.service; then
+              echo "Funnel service is active"
+              tailscale funnel status
               exit 0
             fi
-            echo "Attempt $i: Application not ready yet..."
-            sleep 10
+            echo "Attempt $i/30: Waiting for funnel service..."
+            sleep 2
+          done
+
+          echo "Error: Funnel service failed to start"
+          sudo systemctl status tailscale-funnel --no-pager
+          exit 1
+          EOF
+
+          # Copy and execute script
+          scp -i ~/.ssh/id_rsa setup_funnel.sh ${{ secrets.VJT_ACE_USER }}@${{ secrets.VJT_ACE_HOST }}:~/
+          ssh -i ~/.ssh/id_rsa ${{ secrets.VJT_ACE_USER }}@${{ secrets.VJT_ACE_HOST }} \
+            "chmod +x ~/setup_funnel.sh && ~/setup_funnel.sh && rm ~/setup_funnel.sh"
+
+      - name: Verify Deployment
+        run: |
+          # Define retry function for SSH commands
+          function ssh_with_retry() {
+            for i in {1..5}; do
+              if ssh -i ~/.ssh/id_rsa ${{ secrets.VJT_ACE_USER }}@${{ secrets.VJT_ACE_HOST }} "$1"; then
+                return 0
+              fi
+              echo "SSH attempt $i failed, retrying in 5 seconds..."
+              sleep 5
+            done
+            return 1
+          }
+
+          echo "Verifying deployment..."
+          
+          # Check application health
+          echo "Checking application health..."
+          for i in {1..30}; do
+            if ssh_with_retry "curl -s http://localhost:80/_stcore/health > /dev/null"; then
+              echo "Application is healthy!"
+              break
+            fi
+            echo "Attempt $i: Waiting for application health check..."
+            sleep 5
           done
           
-          echo "Application failed to start within timeout. Collecting debug information..."
+          # Get deployment status
+          echo "Getting deployment status..."
+          ssh_with_retry "cd ~/vjt_ace_app && docker-compose ps"
+          ssh_with_retry "tailscale status"
           
-          ssh -i ~/.ssh/id_rsa ${{ secrets.VJT_ACE_USER }}@${{ secrets.VJT_ACE_HOST }} << 'EOSSH'
-            cd ~/vjt_ace_app
-            echo "Docker Compose Status:"
-            docker-compose ps
-            echo "\nContainer Logs:"
-            docker-compose logs
-            echo "\nPort Status:"
-            sudo netstat -tulpn | grep -E '(:80|:8501)'
-            echo "\nDocker Container Details:"
-            docker ps -a
-            echo "\nSystem Resources:"
-            free -h
-            df -h
-            echo "\nTailscale Status:"
-            tailscale status
-            echo "\nTailscale Network:"
-            tailscale netcheck
-          EOSSH
+          # Get and display Funnel URL
+          echo "Getting Funnel URL..."
+          FUNNEL_URL=$(ssh_with_retry "tailscale funnel status | grep 'https://' | awk '{print \$1}'")
           
-          exit 1
+          if [ ! -z "$FUNNEL_URL" ]; then
+            echo "✅ Deployment successful!"
+            echo "Your application is available at: $FUNNEL_URL"
+          else
+            echo "❌ Failed to get Funnel URL"
+            ssh_with_retry "tailscale funnel status"
+            exit 1
+          fi
 
       - name: Cleanup
         if: always()
         run: |
-          ssh -i ~/.ssh/id_rsa ${{ secrets.VJT_ACE_USER }}@${{ secrets.VJT_ACE_HOST }} "rm -f ~/vjt_ace_app/docker-login.sh"
+          ssh -i ~/.ssh/id_rsa ${{ secrets.VJT_ACE_USER }}@${{ secrets.VJT_ACE_HOST }} \
+            "rm -f ~/vjt_ace_app/docker-login.sh" || true
