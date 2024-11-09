@@ -186,113 +186,135 @@ jobs:
             docker-compose logs --tail=20
           EOSSH
 
-      - name: Setup Tailscale Funnel
-        run: |
-          # Create funnel setup script
-          cat << 'EOF' > setup_funnel.sh
-          #!/bin/bash
-          set -e
-
-          echo "Setting up Tailscale Funnel..."
-          
-          # Verify container is running
-          if ! docker ps | grep -q "streamlit"; then
-            echo "Error: Streamlit container is not running"
-            docker ps -a
-            exit 1
-          fi
-
-          # Create systemd service file
-          sudo tee /etc/systemd/system/tailscale-funnel.service << 'SERVICEEOF'
-          [Unit]
-          Description=Tailscale Funnel Service
-          After=network.target tailscaled.service docker.service
-          Wants=tailscaled.service
-          RequiresMountsFor=/var/run/docker.sock
-
-          [Service]
-          Type=simple
-          ExecStartPre=/bin/sh -c 'until nc -z localhost 80; do sleep 1; done'
-          ExecStart=/usr/bin/tailscale funnel 80
-          Restart=on-failure
-          RestartSec=10
-          User=root
-
-          [Install]
-          WantedBy=multi-user.target
-          SERVICEEOF
-
-          # Reload systemd and start service
-          sudo systemctl daemon-reload
-          sudo systemctl enable tailscale-funnel
-          sudo systemctl restart tailscale-funnel
-
-          # Wait for service to be ready
-          echo "Waiting for funnel service..."
-          for i in {1..30}; do
-            if sudo systemctl is-active --quiet tailscale-funnel.service; then
-              echo "Funnel service is active"
-              tailscale funnel status
-              exit 0
+          - name: Setup Tailscale Funnel
+          run: |
+            # Create funnel setup script
+            cat << 'EOF' > setup_funnel.sh
+            #!/bin/bash
+            set -e
+  
+            echo "Setting up Tailscale Funnel..."
+            
+            # First, clean up any existing funnel/serve configurations
+            echo "Cleaning up existing configurations..."
+            sudo tailscale funnel reset || true
+            sudo tailscale serve reset || true
+            
+            # Verify container is running
+            if ! docker ps | grep -q "streamlit"; then
+              echo "Error: Streamlit container is not running"
+              docker ps -a
+              exit 1
             fi
-            echo "Attempt $i/30: Waiting for funnel service..."
-            sleep 2
-          done
-
-          echo "Error: Funnel service failed to start"
-          sudo systemctl status tailscale-funnel --no-pager
-          exit 1
-          EOF
-
-          # Copy and execute script
-          scp -i ~/.ssh/id_rsa setup_funnel.sh ${{ secrets.VJT_ACE_USER }}@${{ secrets.VJT_ACE_HOST }}:~/
-          ssh -i ~/.ssh/id_rsa ${{ secrets.VJT_ACE_USER }}@${{ secrets.VJT_ACE_HOST }} \
-            "chmod +x ~/setup_funnel.sh && ~/setup_funnel.sh && rm ~/setup_funnel.sh"
-
+  
+            # Enable funnel
+            echo "Enabling Tailscale funnel..."
+            sudo tailscale funnel on || true
+            
+            # Set up funnel for port 80
+            echo "Setting up funnel for port 80..."
+            sudo tailscale funnel 80
+  
+            # Set up serve configuration
+            echo "Setting up serve configuration..."
+            sudo tailscale serve 80
+  
+            # Wait for funnel to be ready
+            echo "Waiting for funnel to be ready..."
+            for i in {1..30}; do
+              if tailscale funnel status | grep -q "https://"; then
+                echo "Funnel is ready!"
+                tailscale funnel status
+                exit 0
+              fi
+              echo "Attempt $i/30: Waiting for funnel..."
+              sleep 2
+            done
+  
+            echo "Error: Failed to set up funnel"
+            tailscale funnel status
+            exit 1
+            EOF
+  
+            # Copy and execute script
+            scp -i ~/.ssh/id_rsa setup_funnel.sh ${{ secrets.VJT_ACE_USER }}@${{ secrets.VJT_ACE_HOST }}:~/
+            ssh -i ~/.ssh/id_rsa ${{ secrets.VJT_ACE_USER }}@${{ secrets.VJT_ACE_HOST }} \
+              "chmod +x ~/setup_funnel.sh && ~/setup_funnel.sh && rm ~/setup_funnel.sh"
+  
       - name: Verify Deployment
         run: |
-          # Define retry function for SSH commands
-          function ssh_with_retry() {
-            for i in {1..5}; do
-              if ssh -i ~/.ssh/id_rsa ${{ secrets.VJT_ACE_USER }}@${{ secrets.VJT_ACE_HOST }} "$1"; then
-                return 0
+            # Define retry function for SSH commands
+            function ssh_with_retry() {
+              for i in {1..5}; do
+                if ssh -i ~/.ssh/id_rsa ${{ secrets.VJT_ACE_USER }}@${{ secrets.VJT_ACE_HOST }} "$1"; then
+                  return 0
+                fi
+                echo "SSH attempt $i failed, retrying in 5 seconds..."
+                sleep 5
+              done
+              return 1
+            }
+  
+            echo "Verifying deployment..."
+            
+            # Check application health
+            echo "Checking application health..."
+            for i in {1..30}; do
+              if ssh_with_retry "curl -s http://localhost:80/_stcore/health > /dev/null"; then
+                echo "Application is healthy!"
+                break
               fi
-              echo "SSH attempt $i failed, retrying in 5 seconds..."
+              echo "Attempt $i: Waiting for application health check..."
               sleep 5
             done
-            return 1
-          }
-
-          echo "Verifying deployment..."
-          
-          # Check application health
-          echo "Checking application health..."
-          for i in {1..30}; do
-            if ssh_with_retry "curl -s http://localhost:80/_stcore/health > /dev/null"; then
-              echo "Application is healthy!"
-              break
+            
+            # Get deployment status
+            echo "Getting deployment status..."
+            ssh_with_retry "cd ~/vjt_ace_app && docker-compose ps"
+            ssh_with_retry "tailscale status"
+            
+            # Verify funnel configuration
+            echo "Verifying funnel configuration..."
+            if ! ssh_with_retry "tailscale funnel status | grep -q 'https://'"; then
+              echo "Funnel not configured properly. Attempting to fix..."
+              ssh_with_retry "
+                sudo tailscale funnel on
+                sudo tailscale funnel 80
+                sudo tailscale serve 80
+              "
             fi
-            echo "Attempt $i: Waiting for application health check..."
-            sleep 5
-          done
-          
-          # Get deployment status
-          echo "Getting deployment status..."
-          ssh_with_retry "cd ~/vjt_ace_app && docker-compose ps"
-          ssh_with_retry "tailscale status"
-          
-          # Get and display Funnel URL
-          echo "Getting Funnel URL..."
-          FUNNEL_URL=$(ssh_with_retry "tailscale funnel status | grep 'https://' | awk '{print \$1}'")
-          
-          if [ ! -z "$FUNNEL_URL" ]; then
-            echo "✅ Deployment successful!"
-            echo "Your application is available at: $FUNNEL_URL"
-          else
+            
+            # Get and display Funnel URL with retries
+            echo "Getting Funnel URL..."
+            for i in {1..5}; do
+              FUNNEL_URL=$(ssh_with_retry "tailscale funnel status | grep 'https://' | awk '{print \$1}'")
+              if [ ! -z "$FUNNEL_URL" ]; then
+                echo "✅ Deployment successful!"
+                echo "Your application is available at: $FUNNEL_URL"
+                
+                # Final verification
+                echo "Final status:"
+                ssh_with_retry "tailscale funnel status"
+                ssh_with_retry "curl -s -I $FUNNEL_URL || true"
+                exit 0
+              fi
+              echo "Attempt $i: Waiting for Funnel URL..."
+              sleep 10
+            done
+            
             echo "❌ Failed to get Funnel URL"
-            ssh_with_retry "tailscale funnel status"
+            echo "Debug information:"
+            ssh_with_retry "
+              echo 'Funnel status:'
+              tailscale funnel status
+              echo 'Tailscale status:'
+              tailscale status
+              echo 'Container status:'
+              docker ps
+              echo 'Port status:'
+              sudo netstat -tulpn | grep :80
+            "
             exit 1
-          fi
 
       - name: Cleanup
         if: always()
