@@ -172,7 +172,7 @@ jobs:
               
               # Give container a moment to initialize
               echo "Waiting for container to initialize..."
-              sleep 10
+              sleep 30
               
               # Show container status and logs
               echo "Container status:"
