@@ -13,7 +13,7 @@ RUN pip install -r requirements.txt
 
 COPY . .
 
-EXPOSE 80
+EXPOSE 8501
 
 HEALTHCHECK CMD curl --fail http://localhost:8501/_stcore/health || exit 1
 
@@ -25,21 +25,17 @@ ENV STREAMLIT_SERVER_RUN_ON_SAVE=false
 ENV STREAMLIT_THEME_BASE="light"
 ENV STREAMLIT_DEVELOPMENT_MODE=false
 ENV STREAMLIT_GLOBAL_DEVELOPMENT_MODE=false
-ENV STREAMLIT_BROWSER_SERVER_PORT=8888 
 
 # Run Streamlit in production mode
-ENTRYPOINT ["streamlit", "run", "app.py", \
-    "--server.port=8501", \
-    "--server.address=0.0.0.0", \
-    "--server.enableCORS=true", \
-    "--server.enableXsrfProtection=false", \
-    "--browser.serverAddress=0.0.0.0", \
-    "--browser.gatherUsageStats=false" \
-    "--browser.serverPort=8888" \
-    "--browser.gatherUsageStats=false", \
-    "--global.developmentMode=false", \
-    "--global.showWarningOnDirectExecution=true", \
-    "--runner.postScriptGC=true", \
-    "--client.showErrorDetails=false", \
-    "--client.toolbarMode=minimal", \
-    "--logger.level=error"]
+CMD streamlit run app.py \
+    --server.port=8501 \
+    --server.address=0.0.0.0 \
+    --server.baseUrlPath=/ \
+    --server.enableCORS=true \
+    --server.enableXsrfProtection=false \
+    --server.maxUploadSize=50 \
+    --browser.serverAddress=0.0.0.0 \
+    --browser.gatherUsageStats=false \
+    --global.developmentMode=false \
+    --global.showWarningOnDirectExecution=true \
+    --logger.level=error
