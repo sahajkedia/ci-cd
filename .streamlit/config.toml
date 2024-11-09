@@ -6,7 +6,7 @@ textColor = "#262730"
 font = "sans serif"
 
 [server]
-enableCORS = false
+enableCORS = true
 enableXsrfProtection = true
 port = 8501
 address = "0.0.0.0"
@@ -14,8 +14,10 @@ headless = true
 baseUrlPath = "/"
 maxUploadSize = 50
 runOnSave = false
+enableWebsocketCompression = true
+
 
 [browser]
-serverAddress = ""
-serverPort = 8501
+serverAddress = "localhost"
+serverPort = 80
 gatherUsageStats = false
