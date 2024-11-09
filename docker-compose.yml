@@ -11,8 +11,8 @@ services:
       - STREAMLIT_SERVER_RUN_ON_SAVE=false
       - STREAMLIT_DEVELOPMENT_MODE=false
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      test: ["CMD-SHELL", "curl -f http://localhost:8501/ || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 10s
+      start_period: 30s
