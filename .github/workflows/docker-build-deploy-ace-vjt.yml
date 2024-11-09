@@ -243,7 +243,7 @@ jobs:
               tailscale funnel status
               
               # Verify application health
-              if curl -s http://localhost:80/_stcore/health > /dev/null; then
+              if curl -s http://localhost:80/ > /dev/null; then
                 echo "Application is healthy!"
               else
                 echo "Application health check failed"
