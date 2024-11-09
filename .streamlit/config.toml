@@ -11,8 +11,9 @@ enableXsrfProtection = false
 port = 8501
 address = "0.0.0.0"
 headless = true
+baseUrlPath = ""
 
 [browser]
-serverAddress = "0.0.0.0" 
-serverPort = 8501
+serverAddress = "0.0.0.0"
+serverPort = 80
 gatherUsageStats = false
