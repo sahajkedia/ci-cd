@@ -195,33 +195,51 @@ jobs:
 
       - name: Enable Tailscale Funnel
         run: |
-            ssh -i ~/.ssh/id_rsa ${{ secrets.VJT_ACE_USER }}@${{ secrets.VJT_ACE_HOST }} << 'EOSSH'
-              set -e
-              echo "Setting up Tailscale Funnel..."
-              
-              # Reset existing configurations
-              sudo tailscale funnel reset || true
-              sudo tailscale serve reset || true
-              
-              # Enable funnel
-              sudo tailscale funnel on || true
-              sudo tailscale funnel 80
-              sudo tailscale serve 80
-              
-              # Verify funnel status
-              tailscale funnel status
-              
-              # Get funnel URL
-              FUNNEL_URL=$(tailscale funnel status | grep 'https://' | awk '{print $1}')
-              if [ ! -z "$FUNNEL_URL" ]; then
-                echo "Funnel URL: $FUNNEL_URL"
-                exit 0
-              else
-                echo "Failed to get funnel URL"
-                exit 1
-              fi
-            EOSSH
-  
+              ssh -i ~/.ssh/id_rsa ${{ secrets.VJT_ACE_USER }}@${{ secrets.VJT_ACE_HOST }} << 'EOSSH'
+                set -ex
+                echo "Setting up Tailscale Funnel..."
+                
+                # Reset existing configurations
+                sudo tailscale funnel reset || true
+                sudo tailscale serve reset || true
+                
+                # Enable funnel
+                echo "Enabling Tailscale Funnel..."
+                sudo tailscale funnel on || true
+                
+                # Set up funnel for localhost:80
+                echo "Setting up funnel for localhost:80..."
+                sudo tailscale funnel 80
+                sudo tailscale serve localhost:80
+                
+                # Wait a moment for changes to take effect
+                sleep 5
+                
+                # Get funnel URL
+                echo "Checking funnel status..."
+                FUNNEL_URL=$(tailscale funnel status | grep 'https://' | awk '{print $1}')
+                if [ ! -z "$FUNNEL_URL" ]; then
+                  echo "Funnel is configured successfully!"
+                  echo "Funnel URL: $FUNNEL_URL"
+                  
+                  # Show full status
+                  echo "Funnel status:"
+                  tailscale funnel status
+                  
+                  echo "Serve status:"
+                  tailscale serve status
+                  
+                  exit 0
+                else
+                  echo "Failed to get funnel URL"
+                  echo "Debug information:"
+                  tailscale funnel status
+                  tailscale serve status
+                  tailscale status
+                  exit 1
+                fi
+              EOSSH
+            
       - name: Verify Deployment
         run: |
             ssh -i ~/.ssh/id_rsa ${{ secrets.VJT_ACE_USER }}@${{ secrets.VJT_ACE_HOST }} << 'EOSSH'
