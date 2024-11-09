@@ -170,6 +170,7 @@ jobs:
              ./docker-login.sh '${{ secrets.GITHUB_TOKEN }}' '${{ github.actor }}' && \
              docker-compose pull && \
              docker-compose up -d"
+             
       - name: Setup Tailscale Funnel
         run: |
                ssh -i ~/.ssh/id_rsa ${{ secrets.VJT_ACE_USER }}@${{ secrets.VJT_ACE_HOST }} "
