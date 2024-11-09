@@ -199,43 +199,33 @@ jobs:
                 set -ex
                 echo "Setting up Tailscale Funnel..."
                 
-                # First stop any existing funnel service and clean up
-                sudo systemctl stop tailscale-funnel.service || true
-                sudo systemctl disable tailscale-funnel.service || true
+                # Clean up existing funnel configuration
+                echo "Cleaning up existing funnel..."
                 sudo tailscale funnel reset || true
-                sudo tailscale funnel off || true
                 
-                # Enable funnel
-                echo "Enabling Tailscale funnel..."
-                sudo tailscale funnel on
-                sleep 2
-                
-                # Start funnel on port 80
-                echo "Starting funnel on port 80..."
-                sudo tailscale funnel 80
+                # Enable funnel with localhost
+                echo "Setting up funnel for localhost:80..."
+                sudo tailscale serve tcp://localhost:80 &&
+                sudo tailscale funnel 80 http://localhost:80
                 
                 # Wait for funnel to be ready
                 echo "Waiting for funnel to be ready..."
                 for i in {1..10}; do
                   if tailscale funnel status | grep -q "https://"; then
                     echo "Funnel is ready!"
-                    break
+                    echo "Funnel status:"
+                    tailscale funnel status
+                    exit 0
                   fi
                   echo "Attempt $i: Waiting for funnel..."
                   sleep 2
                 done
                 
-                # Show final status
-                echo "Final funnel status:"
+                echo "Failed to set up funnel. Debug information:"
                 tailscale funnel status
-                
-                # Verify URL exists
-                if ! tailscale funnel status | grep -q "https://"; then
-                  echo "Failed to get funnel URL"
-                  exit 1
-                fi
+                tailscale serve status
+                exit 1
               EOSSH
-    
       - name: Verify Deployment
         run: |
               ssh -i ~/.ssh/id_rsa ${{ secrets.VJT_ACE_USER }}@${{ secrets.VJT_ACE_HOST }} << 'EOSSH'
