@@ -73,7 +73,7 @@ jobs:
 
       - name: Setup Tailscale
         run: |
-          ssh -i ~/.ssh/id_rsa ${{ secrets.VJT_ACE_USER }}@${{ secrets.VJT_ACE_HOST }} << 'EOSSH'
+          ssh -i ~/.ssh/id_rsa ${{ secrets.VJT_ACE_USER }}@${{ secrets.VJT_ACE_HOST }} "
             # Install Tailscale if not already installed
             if ! command -v tailscale &> /dev/null; then
               curl -fsSL https://tailscale.com/install.sh | sudo sh
@@ -83,27 +83,21 @@ jobs:
             sudo mkdir -p /var/lib/tailscale
             
             # Create OAuth config file
-            sudo tee /var/lib/tailscale/oauth.json > /dev/null << EOF
-            {
-              "client_id": "${{ secrets.VJT_ACE_TAILSCALE_CLIENT_ID }}",
-              "client_secret": "${{ secrets.VJT_ACE_TAILSCALE_CLIENT_SECRET }}"
-            }
-            EOF
+            echo '{\"client_id\": \"${{ secrets.VJT_ACE_TAILSCALE_CLIENT_ID }}\", \"client_secret\": \"${{ secrets.VJT_ACE_TAILSCALE_CLIENT_SECRET }}\"}' | sudo tee /var/lib/tailscale/oauth.json > /dev/null
             
             # Authenticate Tailscale with OAuth
             sudo tailscale up \
-              --hostname "vjt-ace-app" \
-              --operator=$USER \
+              --hostname \"vjt-ace-app\" \
+              --operator=\$USER \
               --accept-routes \
               --accept-dns \
               --oauth-client-id=${{ secrets.VJT_ACE_TAILSCALE_CLIENT_ID }} \
               --oauth-client-secret=${{ secrets.VJT_ACE_TAILSCALE_CLIENT_SECRET }}
             
             # Get Tailscale IP
-            TAILSCALE_IP=$(tailscale ip -4)
-            echo "Tailscale IP: $TAILSCALE_IP"
-          EOSSH
-
+            TAILSCALE_IP=\$(tailscale ip -4)
+            echo \"Tailscale IP: \$TAILSCALE_IP\"
+          "
       - name: Prepare and copy configuration files
         run: |
           # Prepare docker-compose file
