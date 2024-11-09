@@ -175,7 +175,100 @@ jobs:
         run: |
                # Create a script to run on the remote server
                cat << 'EOF' > setup_funnel.sh
-               $(cat setup_funnel.sh)
+               #!/bin/bash
+               set -e
+           
+               echo "Starting Tailscale Funnel setup..."
+           
+               # Function to check if port is in use
+               check_port() {
+                   local port=$1
+                   if sudo lsof -i ":$port" > /dev/null 2>&1; then
+                       return 0
+                   else
+                       return 1
+                   fi
+               }
+           
+               # Function to stop existing funnel service if running
+               cleanup_existing_service() {
+                   echo "Cleaning up existing funnel service..."
+                   sudo systemctl stop tailscale-funnel.service 2>/dev/null || true
+                   sudo systemctl disable tailscale-funnel.service 2>/dev/null || true
+                   sudo rm -f /etc/systemd/system/tailscale-funnel.service
+                   sudo systemctl daemon-reload
+               }
+           
+               # Function to wait for service to be ready
+               wait_for_service() {
+                   local max_attempts=30
+                   local attempt=1
+                   
+                   echo "Waiting for Tailscale Funnel service to start..."
+                   while [ $attempt -le $max_attempts ]; do
+                       if sudo systemctl is-active --quiet tailscale-funnel.service; then
+                           echo "Service is active!"
+                           return 0
+                       fi
+                       echo "Attempt $attempt/$max_attempts: Service not ready yet..."
+                       sleep 2
+                       attempt=$((attempt + 1))
+                   done
+                   return 1
+               }
+           
+               # Cleanup any existing service
+               cleanup_existing_service
+           
+               # Create systemd service file for Tailscale Funnel
+               sudo tee /etc/systemd/system/tailscale-funnel.service << 'SERVICEEOF'
+               [Unit]
+               Description=Tailscale Funnel Service
+               After=network.target tailscaled.service
+               Wants=tailscaled.service
+           
+               [Service]
+               Type=simple
+               ExecStartPre=/bin/sleep 5
+               ExecStart=/usr/bin/tailscale funnel 80
+               Restart=on-failure
+               RestartSec=10
+               User=root
+           
+               [Install]
+               WantedBy=multi-user.target
+               SERVICEEOF
+           
+               # Reload systemd
+               echo "Reloading systemd configuration..."
+               sudo systemctl daemon-reload
+           
+               # Enable and start the service
+               echo "Enabling and starting Tailscale Funnel service..."
+               sudo systemctl enable tailscale-funnel
+               sudo systemctl start tailscale-funnel
+           
+               # Wait for service to be ready
+               if wait_for_service; then
+                   echo "Funnel Status:"
+                   tailscale funnel status || true
+                   
+                   echo "Service Status:"
+                   sudo systemctl status tailscale-funnel --no-pager || true
+                   
+                   # Verify funnel is working
+                   echo "Verifying funnel configuration..."
+                   if tailscale funnel status | grep -q "No serve config"; then
+                       echo "Warning: Funnel has no serve configuration. Running setup..."
+                       sudo tailscale serve 80
+                   fi
+               else
+                   echo "Error: Service failed to start properly"
+                   echo "Debugging information:"
+                   sudo systemctl status tailscale-funnel --no-pager || true
+                   sudo journalctl -u tailscale-funnel -n 50 --no-pager
+                   exit 1
+               fi
                EOF
                
                # Copy script to server
@@ -187,6 +280,7 @@ jobs:
                  ~/setup_funnel.sh
                  rm ~/setup_funnel.sh
                "
+
       - name: Verify Deployment and Show Tailscale IP
         run: |
           echo "Waiting for application to be ready..."
