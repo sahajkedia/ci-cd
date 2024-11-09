@@ -15,5 +15,5 @@ baseUrlPath = ""
 
 [browser]
 serverAddress = "0.0.0.0"
-serverPort = 8501
+serverPort = 8888
 gatherUsageStats = false

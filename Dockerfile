@@ -25,6 +25,7 @@ ENV STREAMLIT_SERVER_RUN_ON_SAVE=false
 ENV STREAMLIT_THEME_BASE="light"
 ENV STREAMLIT_DEVELOPMENT_MODE=false
 ENV STREAMLIT_GLOBAL_DEVELOPMENT_MODE=false
+ENV STREAMLIT_BROWSER_SERVER_PORT=8888 
 
 # Run Streamlit in production mode
 ENTRYPOINT ["streamlit", "run", "app.py", \
@@ -33,4 +34,12 @@ ENTRYPOINT ["streamlit", "run", "app.py", \
     "--server.enableCORS=true", \
     "--server.enableXsrfProtection=false", \
     "--browser.serverAddress=0.0.0.0", \
-    "--browser.gatherUsageStats=false"]
+    "--browser.gatherUsageStats=false" \
+    "--browser.serverPort=8888" \
+    "--browser.gatherUsageStats=false", \
+    "--global.developmentMode=false", \
+    "--global.showWarningOnDirectExecution=true", \
+    "--runner.postScriptGC=true", \
+    "--client.showErrorDetails=false", \
+    "--client.toolbarMode=minimal", \
+    "--logger.level=error"]
