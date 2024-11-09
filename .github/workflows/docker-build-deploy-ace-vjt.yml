@@ -199,93 +199,100 @@ jobs:
                 set -ex
                 echo "Setting up Tailscale Funnel..."
                 
-                # Create systemd service file
-                sudo tee /etc/systemd/system/tailscale-funnel.service << EOF
-                [Unit]
-                Description=Tailscale Funnel Service
-                After=network.target tailscaled.service
-                Wants=tailscaled.service
-    
-                [Service]
-                Type=simple
-                ExecStart=/usr/bin/tailscale funnel 80
-                Restart=always
-                RestartSec=5
-    
-                [Install]
-                WantedBy=multi-user.target
-                EOF
-    
-                # Reload systemd
-                sudo systemctl daemon-reload
-    
-                # Reset existing funnel configurations
+                # First stop any existing funnel service and clean up
                 sudo systemctl stop tailscale-funnel.service || true
+                sudo systemctl disable tailscale-funnel.service || true
                 sudo tailscale funnel reset || true
+                sudo tailscale funnel off || true
                 
-                # Enable and start funnel service
-                echo "Starting Tailscale Funnel service..."
-                sudo systemctl enable tailscale-funnel
-                sudo systemctl start tailscale-funnel
+                # Enable funnel
+                echo "Enabling Tailscale funnel..."
+                sudo tailscale funnel on
+                sleep 2
                 
-                # Wait for service to start
-                sleep 5
+                # Start funnel on port 80
+                echo "Starting funnel on port 80..."
+                sudo tailscale funnel 80
                 
-                # Check service status
-                echo "Checking service status..."
-                sudo systemctl status tailscale-funnel --no-pager
+                # Wait for funnel to be ready
+                echo "Waiting for funnel to be ready..."
+                for i in {1..10}; do
+                  if tailscale funnel status | grep -q "https://"; then
+                    echo "Funnel is ready!"
+                    break
+                  fi
+                  echo "Attempt $i: Waiting for funnel..."
+                  sleep 2
+                done
                 
-                # Verify funnel is working
-                echo "Verifying funnel configuration..."
-                if tailscale funnel status | grep -q "https://"; then
-                  echo "Funnel configured successfully!"
-                  tailscale funnel status
-                  exit 0
-                else
-                  echo "Failed to configure funnel"
-                  tailscale funnel status
+                # Show final status
+                echo "Final funnel status:"
+                tailscale funnel status
+                
+                # Verify URL exists
+                if ! tailscale funnel status | grep -q "https://"; then
+                  echo "Failed to get funnel URL"
                   exit 1
                 fi
               EOSSH
-            
+    
       - name: Verify Deployment
         run: |
-            ssh -i ~/.ssh/id_rsa ${{ secrets.VJT_ACE_USER }}@${{ secrets.VJT_ACE_HOST }} << 'EOSSH'
-              set -e
-              echo "Verifying deployment..."
-              
-              # Check container status
-              echo "Container status:"
-              docker-compose -f ~/vjt_ace_app/docker-compose.yml ps
-              
-              # Check Tailscale status
-              echo "Tailscale status:"
-              tailscale status
-              
-              # Check funnel status
-              echo "Funnel status:"
-              tailscale funnel status
-              
-              # Verify application health
-              if curl -s http://localhost:80/ > /dev/null; then
-                echo "Application is healthy!"
-              else
-                echo "Application health check failed"
-                exit 1
-              fi
-              
-              # Get and verify funnel URL
-              FUNNEL_URL=$(tailscale funnel status | grep 'https://' | awk '{print $1}')
-              if [ ! -z "$FUNNEL_URL" ]; then
-                echo "✅ Deployment successful!"
-                echo "Your application is available at: $FUNNEL_URL"
-                exit 0
-              else
-                echo "❌ Failed to get Funnel URL"
+              ssh -i ~/.ssh/id_rsa ${{ secrets.VJT_ACE_USER }}@${{ secrets.VJT_ACE_HOST }} << 'EOSSH'
+                set -e
+                echo "Verifying deployment..."
                 
-              fi
-            EOSSH
-  
+                # Function to check funnel status with retries
+                check_funnel() {
+                  for i in {1..5}; do
+                    if tailscale funnel status | grep -q "https://"; then
+                      return 0
+                    fi
+                    sleep 2
+                  done
+                  return 1
+                }
+                
+                # Check container status
+                echo "Container status:"
+                docker-compose -f ~/vjt_ace_app/docker-compose.yml ps
+                
+                # Check Tailscale status
+                echo "Tailscale status:"
+                tailscale status
+                
+                # Check funnel status
+                echo "Funnel status:"
+                tailscale funnel status
+                
+                # Simple health check
+                echo "Checking application health..."
+                if curl -s localhost:80 > /dev/null; then
+                  echo "Application is responding!"
+                else
+                  echo "Application is not responding"
+                  exit 1
+                fi
+                
+                # Final funnel check
+                if check_funnel; then
+                  FUNNEL_URL=$(tailscale funnel status | grep 'https://' | awk '{print $1}')
+                  echo "✅ Deployment successful!"
+                  echo "Your application is available at: $FUNNEL_URL"
+                  
+                  # Try to access the funnel URL
+                  echo "Testing funnel URL..."
+                  curl -I "$FUNNEL_URL" || true
+                  
+                  exit 0
+                else
+                  echo "❌ Failed to get Funnel URL"
+                  echo "Debug information:"
+                  tailscale funnel status
+                  tailscale status
+                  exit 1
+                fi
+              EOSSH
       - name: Cleanup
         if: always()
         run: |
