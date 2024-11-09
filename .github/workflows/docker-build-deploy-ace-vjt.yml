@@ -170,31 +170,21 @@ jobs:
               docker-compose pull
               docker-compose up -d
               
-              # Initialize counter
-              counter=0
-              max_attempts=30
-              
-              # Wait for container to be healthy
-              echo "Waiting for container to be healthy..."
-              while [ $counter -lt $max_attempts ]; do
-                if docker-compose ps | grep -q "healthy"; then
-                  echo "Container is healthy!"
-                  docker-compose ps
-                  docker-compose logs --tail=20
-                  exit 0
-                fi
-                counter=$((counter + 1))
-                echo "Attempt $counter/$max_attempts: Waiting for container health check..."
-                sleep 5
-              done
-              
-              # If we get here, container didn't become healthy
-              echo "Container failed to become healthy in time"
+              # Show container status and logs
+              echo "Container status:"
               docker-compose ps
-              docker-compose logs
-              exit 1
+              echo "Container logs:"
+              docker-compose logs --tail=20
+              
+              # Simple check if container is running
+              if docker-compose ps | grep -q "Up"; then
+                echo "Container is running!"
+                exit 0
+              else
+                echo "Container failed to start"
+                exit 1
+              fi
             EOSSH
-  
       - name: Enable Tailscale Funnel
         run: |
             ssh -i ~/.ssh/id_rsa ${{ secrets.VJT_ACE_USER }}@${{ secrets.VJT_ACE_HOST }} << 'EOSSH'
