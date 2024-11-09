@@ -71,6 +71,39 @@ jobs:
         run: |
           ssh -i ~/.ssh/id_rsa ${{ secrets.VJT_ACE_USER }}@${{ secrets.VJT_ACE_HOST }} "mkdir -p ~/vjt_ace_app/.streamlit"
 
+      - name: Setup Tailscale
+        run: |
+          ssh -i ~/.ssh/id_rsa ${{ secrets.VJT_ACE_USER }}@${{ secrets.VJT_ACE_HOST }} << 'EOSSH'
+            # Install Tailscale if not already installed
+            if ! command -v tailscale &> /dev/null; then
+              curl -fsSL https://tailscale.com/install.sh | sudo sh
+            fi
+
+            # Create Tailscale OAuth config directory
+            sudo mkdir -p /var/lib/tailscale
+            
+            # Create OAuth config file
+            sudo tee /var/lib/tailscale/oauth.json > /dev/null << EOF
+            {
+              "client_id": "${{ secrets.VJT_ACE_TAILSCALE_CLIENT_ID }}",
+              "client_secret": "${{ secrets.VJT_ACE_TAILSCALE_CLIENT_SECRET }}"
+            }
+            EOF
+            
+            # Authenticate Tailscale with OAuth
+            sudo tailscale up \
+              --hostname "vjt-ace-app" \
+              --operator=$USER \
+              --accept-routes \
+              --accept-dns \
+              --oauth-client-id=${{ secrets.VJT_ACE_TAILSCALE_CLIENT_ID }} \
+              --oauth-client-secret=${{ secrets.VJT_ACE_TAILSCALE_CLIENT_SECRET }}
+            
+            # Get Tailscale IP
+            TAILSCALE_IP=$(tailscale ip -4)
+            echo "Tailscale IP: $TAILSCALE_IP"
+          EOSSH
+
       - name: Prepare and copy configuration files
         run: |
           # Prepare docker-compose file
@@ -129,14 +162,20 @@ jobs:
              docker-compose pull && \
              docker-compose up -d"
 
-      - name: Verify Deployment
+      - name: Verify Deployment and Show Tailscale IP
         run: |
           echo "Waiting for application to be ready..."
           for i in {1..30}; do
             if ssh -i ~/.ssh/id_rsa ${{ secrets.VJT_ACE_USER }}@${{ secrets.VJT_ACE_HOST }} \
                "curl -s http://localhost:8888/_stcore/health" > /dev/null; then
               echo "Application is up and running!"
-              echo "Access your application at: http://${{ secrets.VJT_ACE_HOST }}:8888"
+              
+              # Get and display Tailscale IP
+              TAILSCALE_IP=$(ssh -i ~/.ssh/id_rsa ${{ secrets.VJT_ACE_USER }}@${{ secrets.VJT_ACE_HOST }} "tailscale ip -4")
+              echo "Access your application at: http://$TAILSCALE_IP:8888"
+              
+              # Show Tailscale status
+              ssh -i ~/.ssh/id_rsa ${{ secrets.VJT_ACE_USER }}@${{ secrets.VJT_ACE_HOST }} "tailscale status"
               
               # Show container status and logs
               ssh -i ~/.ssh/id_rsa ${{ secrets.VJT_ACE_USER }}@${{ secrets.VJT_ACE_HOST }} \
@@ -163,6 +202,10 @@ jobs:
             echo "\nSystem Resources:"
             free -h
             df -h
+            echo "\nTailscale Status:"
+            tailscale status
+            echo "\nTailscale Network:"
+            tailscale netcheck
           EOSSH
           
           exit 1
