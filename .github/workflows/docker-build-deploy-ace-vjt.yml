@@ -170,21 +170,29 @@ jobs:
               docker-compose pull
               docker-compose up -d
               
+              # Give container a moment to initialize
+              echo "Waiting for container to initialize..."
+              sleep 10
+              
               # Show container status and logs
               echo "Container status:"
               docker-compose ps
               echo "Container logs:"
               docker-compose logs --tail=20
               
-              # Simple check if container is running
-              if docker-compose ps | grep -q "Up"; then
-                echo "Container is running!"
+              # Check if logs contain the success message
+              if docker-compose logs | grep -q "You can now view your Streamlit app in your browser"; then
+                echo "Container is running and Streamlit is ready!"
+                docker-compose ps
                 exit 0
               else
-                echo "Container failed to start"
+                echo "Container failed to initialize properly"
+                docker-compose ps
+                docker-compose logs
                 exit 1
               fi
             EOSSH
+
       - name: Enable Tailscale Funnel
         run: |
             ssh -i ~/.ssh/id_rsa ${{ secrets.VJT_ACE_USER }}@${{ secrets.VJT_ACE_HOST }} << 'EOSSH'
