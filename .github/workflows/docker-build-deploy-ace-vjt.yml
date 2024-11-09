@@ -180,45 +180,32 @@ jobs:
            
                echo "Starting Tailscale Funnel setup..."
            
-               # Function to check if port is in use
-               check_port() {
-                   local port=$1
-                   if sudo lsof -i ":$port" > /dev/null 2>&1; then
-                       return 0
-                   else
-                       return 1
-                   fi
-               }
-           
-               # Function to stop existing funnel service if running
-               cleanup_existing_service() {
-                   echo "Cleaning up existing funnel service..."
+               # Function to cleanup existing funnel configurations
+               cleanup_funnel() {
+                   echo "Cleaning up existing funnel configurations..."
+                   # Stop the funnel service if running
                    sudo systemctl stop tailscale-funnel.service 2>/dev/null || true
                    sudo systemctl disable tailscale-funnel.service 2>/dev/null || true
-                   sudo rm -f /etc/systemd/system/tailscale-funnel.service
-                   sudo systemctl daemon-reload
-               }
-           
-               # Function to wait for service to be ready
-               wait_for_service() {
-                   local max_attempts=30
-                   local attempt=1
                    
-                   echo "Waiting for Tailscale Funnel service to start..."
-                   while [ $attempt -le $max_attempts ]; do
-                       if sudo systemctl is-active --quiet tailscale-funnel.service; then
-                           echo "Service is active!"
-                           return 0
+                   # Remove existing funnel configurations
+                   sudo tailscale funnel reset || true
+                   sudo tailscale serve reset || true
+                   
+                   # Kill any existing tailscale funnel processes
+                   sudo pkill -f "tailscale funnel" || true
+                   
+                   # Wait for port to be available
+                   echo "Waiting for port 80 to be free..."
+                   for i in {1..10}; do
+                       if ! sudo lsof -i :80 >/dev/null 2>&1; then
+                           break
                        fi
-                       echo "Attempt $attempt/$max_attempts: Service not ready yet..."
                        sleep 2
-                       attempt=$((attempt + 1))
                    done
-                   return 1
                }
            
-               # Cleanup any existing service
-               cleanup_existing_service
+               # Cleanup existing configurations
+               cleanup_funnel
            
                # Create systemd service file for Tailscale Funnel
                sudo tee /etc/systemd/system/tailscale-funnel.service << 'SERVICEEOF'
@@ -234,6 +221,8 @@ jobs:
                Restart=on-failure
                RestartSec=10
                User=root
+               KillMode=process
+               KillSignal=SIGTERM
            
                [Install]
                WantedBy=multi-user.target
@@ -246,27 +235,44 @@ jobs:
                # Enable and start the service
                echo "Enabling and starting Tailscale Funnel service..."
                sudo systemctl enable tailscale-funnel
+               
+               # Ensure port 80 is available before starting
+               sudo fuser -k 80/tcp || true
+               sleep 2
+               
                sudo systemctl start tailscale-funnel
            
                # Wait for service to be ready
-               if wait_for_service; then
+               echo "Waiting for Tailscale Funnel service to start..."
+               for i in {1..30}; do
+                   if sudo systemctl is-active --quiet tailscale-funnel.service; then
+                       echo "Service is active!"
+                       break
+                   fi
+                   echo "Attempt $i/30: Service not ready yet..."
+                   sleep 2
+               done
+           
+               # Check final status
+               if sudo systemctl is-active --quiet tailscale-funnel.service; then
                    echo "Funnel Status:"
                    tailscale funnel status || true
                    
                    echo "Service Status:"
                    sudo systemctl status tailscale-funnel --no-pager || true
                    
-                   # Verify funnel is working
-                   echo "Verifying funnel configuration..."
-                   if tailscale funnel status | grep -q "No serve config"; then
-                       echo "Warning: Funnel has no serve configuration. Running setup..."
-                       sudo tailscale serve 80
-                   fi
+                   # Set up serving on port 80
+                   echo "Setting up Tailscale serve..."
+                   sudo tailscale serve 80 || true
                else
                    echo "Error: Service failed to start properly"
                    echo "Debugging information:"
                    sudo systemctl status tailscale-funnel --no-pager || true
                    sudo journalctl -u tailscale-funnel -n 50 --no-pager
+                   echo "Port 80 status:"
+                   sudo lsof -i :80 || true
+                   echo "Tailscale status:"
+                   tailscale status || true
                    exit 1
                fi
                EOF
@@ -280,7 +286,7 @@ jobs:
                  ~/setup_funnel.sh
                  rm ~/setup_funnel.sh
                "
-
+               
       - name: Verify Deployment and Show Tailscale IP
         run: |
           echo "Waiting for application to be ready..."
