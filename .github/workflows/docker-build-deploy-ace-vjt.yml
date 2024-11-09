@@ -199,43 +199,51 @@ jobs:
                 set -ex
                 echo "Setting up Tailscale Funnel..."
                 
-                # Reset existing configurations
+                # Create systemd service file
+                sudo tee /etc/systemd/system/tailscale-funnel.service << EOF
+                [Unit]
+                Description=Tailscale Funnel Service
+                After=network.target tailscaled.service
+                Wants=tailscaled.service
+    
+                [Service]
+                Type=simple
+                ExecStart=/usr/bin/tailscale funnel 80
+                Restart=always
+                RestartSec=5
+    
+                [Install]
+                WantedBy=multi-user.target
+                EOF
+    
+                # Reload systemd
+                sudo systemctl daemon-reload
+    
+                # Reset existing funnel configurations
+                sudo systemctl stop tailscale-funnel.service || true
                 sudo tailscale funnel reset || true
-                sudo tailscale serve reset || true
                 
-                # Enable funnel
-                echo "Enabling Tailscale Funnel..."
-                sudo tailscale funnel on || true
+                # Enable and start funnel service
+                echo "Starting Tailscale Funnel service..."
+                sudo systemctl enable tailscale-funnel
+                sudo systemctl start tailscale-funnel
                 
-                # Set up funnel for localhost:80
-                echo "Setting up funnel for localhost:80..."
-                sudo tailscale funnel 80
-                sudo tailscale serve localhost:80
-                
-                # Wait a moment for changes to take effect
+                # Wait for service to start
                 sleep 5
                 
-                # Get funnel URL
-                echo "Checking funnel status..."
-                FUNNEL_URL=$(tailscale funnel status | grep 'https://' | awk '{print $1}')
-                if [ ! -z "$FUNNEL_URL" ]; then
-                  echo "Funnel is configured successfully!"
-                  echo "Funnel URL: $FUNNEL_URL"
-                  
-                  # Show full status
-                  echo "Funnel status:"
+                # Check service status
+                echo "Checking service status..."
+                sudo systemctl status tailscale-funnel --no-pager
+                
+                # Verify funnel is working
+                echo "Verifying funnel configuration..."
+                if tailscale funnel status | grep -q "https://"; then
+                  echo "Funnel configured successfully!"
                   tailscale funnel status
-                  
-                  echo "Serve status:"
-                  tailscale serve status
-                  
                   exit 0
                 else
-                  echo "Failed to get funnel URL"
-                  echo "Debug information:"
+                  echo "Failed to configure funnel"
                   tailscale funnel status
-                  tailscale serve status
-                  tailscale status
                   exit 1
                 fi
               EOSSH
