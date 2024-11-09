@@ -210,18 +210,13 @@ jobs:
                 echo "Setting up new funnel..."
                 sudo tailscale funnel 80
                 
-                # Brief wait
-                sleep 5
                 
-                # Show status for logging purposes
-                echo "Funnel status:"
-                tailscale funnel status || true
                 
-                echo "Port 80 status:"
-                sudo lsof -i :80 || true
                 
-                echo "Tailscale status:"
-                tailscale status || true
+                
+                
+                
+                
                 
                 # Exit successfully since we know the service works
                 exit 0
