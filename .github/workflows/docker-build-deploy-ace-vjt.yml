@@ -175,19 +175,15 @@ jobs:
             if ! command -v curl &> /dev/null; then
               sudo apt-get update && sudo apt-get install -y curl
             fi
-            
-            # Allow port 80 in firewall
-            sudo ufw allow 80/tcp
-            
-            # Pull latest image and restart
-            ./docker-login.sh "${{ secrets.GITHUB_TOKEN }}" "${{ github.actor }}"
-            docker-compose pull
-            docker-compose up -d
-            
-            # Check container status
-            docker-compose ps
-            docker-compose logs
           EOSSH
+
+      - name: Login and Deploy
+        run: |
+          ssh -i ~/.ssh/id_rsa ${{ secrets.VJT_ACE_USER }}@${{ secrets.VJT_ACE_HOST }} \
+            "cd ~/vjt_ace_app && \
+             ./docker-login.sh '${{ secrets.GITHUB_TOKEN }}' '${{ github.actor }}' && \
+             docker-compose pull && \
+             docker-compose up -d"
 
       - name: Verify Deployment
         run: |
