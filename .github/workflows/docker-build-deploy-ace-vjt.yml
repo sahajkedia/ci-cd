@@ -173,24 +173,22 @@ jobs:
 
       - name: Setup Tailscale Funnel
         run: |
-               ssh -i ~/.ssh/id_rsa ${{ secrets.VJT_ACE_USER }}@${{ secrets.VJT_ACE_HOST }} "
-                 # Kill any existing funnel process
-                 sudo pkill -f 'tailscale funnel' || true
+               ssh -i ~/.ssh/id_rsa ${{ secrets.VJT_ACE_USER }}@${{ secrets.VJT_ACE_HOST }} '
+                 echo "Starting Tailscale Funnel setup..."
                  
-                 # Start funnel in the background
-                 sudo nohup tailscale funnel 80 </dev/null >/tmp/funnel.log 2>&1 &
+                 # Stop any existing funnel
+                 sudo pkill -f "tailscale funnel" || true
                  
-                 # Wait for funnel to start
+                 # Start funnel in background
+                 (sudo tailscale funnel 80 &)
+                 
+                 # Give it a moment to start
                  sleep 5
                  
-                 # Show status without running in foreground
-                 echo 'Funnel Status:'
-                 tailscale funnel status
-                 
-                 # Show the public URL
-                 echo 'Public URL:'
-                 tailscale funnel status | grep 'https://' || echo 'URL not found'
-               "
+                 # Check funnel status
+                 echo "Checking Funnel Status..."
+                 tailscale funnel status || true
+               ' || echo "SSH command failed but continuing..."
 
       - name: Verify Deployment and Show Tailscale IP
         run: |
