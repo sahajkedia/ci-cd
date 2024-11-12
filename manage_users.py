@@ -1,47 +1,60 @@
-import toml
-from pathlib import Path
+import json
 import argparse
+from enum import Enum
 
-def load_secrets():
-    secrets_path = Path('.streamlit/secrets.toml')
-    if secrets_path.exists():
-        with open(secrets_path, 'r') as f:
-            return toml.load(f)
-    return {'passwords': {}, 'cookies': {'key': 'your-secret-key', 'expiry_days': 30}}
+class UserRole(str, Enum):
+    SUPERUSER = "superuser"
+    USER = "user"
 
-def save_secrets(secrets):
-    secrets_path = Path('.streamlit/secrets.toml')
-    secrets_path.parent.mkdir(exist_ok=True)
-    with open(secrets_path, 'w') as f:
-        toml.dump(secrets, f)
+USERS_FILE = "users.json"
 
-def add_user(username, password):
-    secrets = load_secrets()
-    secrets['passwords'][username] = password
-    save_secrets(secrets)
-    print(f"User {username} added successfully!")
+def load_users():
+    try:
+        with open(USERS_FILE, 'r') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return {"users": {}}
+
+def save_users(users):
+    with open(USERS_FILE, 'w') as f:
+        json.dump(users, f, indent=4)
+
+def add_user(username, password, role):
+    users = load_users()
+    if username in users['users']:
+        print(f"Error: User {username} already exists!")
+        return
+    
+    users['users'][username] = {
+        "password": password,
+        "role": role
+    }
+    save_users(users)
+    print(f"User {username} added successfully with role {role}!")
 
 def delete_user(username):
-    secrets = load_secrets()
-    if username not in secrets['passwords']:
-        print(f"User {username} not found!")
+    users = load_users()
+    if username not in users['users']:
+        print(f"Error: User {username} not found!")
         return
-    del secrets['passwords'][username]
-    save_secrets(secrets)
+    
+    del users['users'][username]
+    save_users(users)
     print(f"User {username} deleted successfully!")
 
 def list_users():
-    secrets = load_secrets()
-    users = secrets.get('passwords', {})
-    if not users:
+    users = load_users()
+    if not users['users']:
         print("No users found!")
         return
     
     print("\nRegistered Users:")
-    print("-" * 30)
-    for username in users:
-        print(f"Username: {username}")
-    print("-" * 30)
+    print("-" * 50)
+    print(f"{'Username':<20} {'Role':<15}")
+    print("-" * 50)
+    for username, user_data in users['users'].items():
+        print(f"{username:<20} {user_data['role']:<15}")
+    print("-" * 50)
 
 def main():
     parser = argparse.ArgumentParser(description='User Management Tool')
@@ -51,6 +64,7 @@ def main():
     add_parser = subparsers.add_parser('add', help='Add a new user')
     add_parser.add_argument('username', help='Username')
     add_parser.add_argument('password', help='Password')
+    add_parser.add_argument('--role', choices=['user', 'superuser'], default='user', help='User role')
     
     # Delete user command
     delete_parser = subparsers.add_parser('delete', help='Delete a user')
@@ -62,7 +76,7 @@ def main():
     args = parser.parse_args()
     
     if args.command == 'add':
-        add_user(args.username, args.password)
+        add_user(args.username, args.password, args.role)
     elif args.command == 'delete':
         delete_user(args.username)
     elif args.command == 'list':
